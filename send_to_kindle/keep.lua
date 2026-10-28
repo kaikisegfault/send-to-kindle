@@ -19,6 +19,9 @@ local function keep(blocks)
     local nxt = blocks[i + 1]
     if b.t == "Div" and b.classes:includes("titlepage") then
       i = i + 1
+    elseif b.t == "Div" and b.classes:includes("keep") then
+      out:insert(b)  -- kept already (an EPUB made here, read back)
+      i = i + 1
     elseif b.t == "Div" then
       out:insert(pandoc.Div(keep(b.content), b.attr))  -- a new Div: older pandoc can't edit one in place
       i = i + 1
