@@ -110,7 +110,9 @@ def prepare(doc: Document, fmt: str | None, title: str | None = None) -> tuple[b
     data = to_epub(doc, title)
     result = check.compare(doc.text or "", extract.epub_text(data))
     if doc.meta.get("ocr"):
-        result["ocr"] = doc.meta.get("ocr_languages", True)
+        result["ocr"] = f"{doc.meta.get('ocr_languages')}, confidence {doc.meta.get('ocr_confidence')}%"
+        if doc.meta.get("ocr_poor"):
+            result["ocr_poor"] = doc.meta["ocr_poor"]
     if doc.meta.get("second_extractor"):
         result["second_extractor"] = doc.meta["second_extractor"]
     if doc.meta.get("check_page"):

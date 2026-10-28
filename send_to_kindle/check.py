@@ -46,7 +46,9 @@ def describe(check: dict) -> str:
     if check.get("missing"):
         line += " (missing: " + ", ".join(check["missing"][:8]) + ")"
     if check.get("ocr"):
-        line += "; text recognised by OCR, which can misread words"
+        line += f"; text recognised by OCR ({check['ocr']}), which can misread words"
+    if check.get("ocr_poor"):
+        line += f"; {check['ocr_poor']}"
     if check.get("added_words"):
         line += f"; {check['added_words']:,} words added"
     if check.get("check_page"):

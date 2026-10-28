@@ -113,17 +113,32 @@ def is_scan(meta: dict) -> bool:
     return bool(pages) and len(meta.get("empty_pages") or []) >= pages * SCAN_SHARE
 
 
-def _tesseract(png: bytes, langs: str) -> str:
+OCR_POOR = 60  # mean word confidence below this: the scan is too poor for its text to be trusted
+
+
+def _tesseract(png: bytes, lang: str) -> tuple[list[str], list[float]]:
+    """One page: its paragraphs (from Tesseract's own layout) and the confidence of every word."""
     import os
 
     env = dict(os.environ, OMP_THREAD_LIMIT="1")  # one core: the server's other work comes first
     with tempfile.TemporaryDirectory() as tmp:
         img = Path(tmp) / "page.png"
         img.write_bytes(png)
-        r = subprocess.run(["tesseract", str(img), "stdout", "-l", langs, "--psm", "3"], capture_output=True, env=env, timeout=600)
+        r = subprocess.run(["tesseract", str(img), "stdout", "-l", lang, "--psm", "3", "tsv"], capture_output=True, env=env, timeout=600)
     if r.returncode != 0:
         raise RuntimeError(f"tesseract failed: {r.stderr.decode()[:300]}")
-    return r.stdout.decode("utf-8", "replace")
+    paragraphs: dict[tuple[int, int], dict[int, list[str]]] = {}
+    confidences: list[float] = []
+    for line in r.stdout.decode("utf-8", "replace").splitlines()[1:]:
+        cols = line.split("\t")
+        if len(cols) < 12 or cols[0] != "5" or not cols[11].strip():
+            continue
+        block, par, row = int(cols[2]), int(cols[3]), int(cols[4])
+        paragraphs.setdefault((block, par), {}).setdefault(row, []).append(cols[11].strip())
+        if float(cols[10]) >= 0:
+            confidences.append(float(cols[10]))
+    texts = [join_lines([" ".join(words) for _, words in sorted(rows.items())]) for _, rows in sorted(paragraphs.items())]
+    return [t for t in texts if t], confidences
 
 
 def _installed_langs() -> set[str]:
@@ -138,23 +153,27 @@ def ocr_paragraphs(data: bytes) -> tuple[list[str], dict]:
     """A scanned PDF's text by OCR (Tesseract, on this machine; nothing leaves it). Page by page, in order;
     page numbers and running headers left out as for text PDFs. OCR can misread a word."""
     import pymupdf
-    from .convert import guess_lang
 
     have = _installed_langs()
-    if not have:
+    candidates = [l for l in OCR_LANGS if l in have]
+    if not candidates:
         raise ValueError("this PDF is a scan and OCR (tesseract) isn't installed: send it as the original PDF")
-    langs = "+".join(l for l in OCR_LANGS if l in have) or "eng"
     pages_text: list[list[str]] = []
+    confidences: list[float] = []
+    lang = None
     with pymupdf.open(stream=data, filetype="pdf") as doc:
-        for number, page in enumerate(doc):
+        for page in doc:
             png = page.get_pixmap(dpi=300, colorspace=pymupdf.csGRAY).tobytes("png")
-            text = _tesseract(png, langs)
-            if number == 0:
-                lang = guess_lang(text)
-                langs = {"ka": "kat", "ru": "rus", "en": "eng"}.get(lang or "", langs)
-                if langs not in have:
-                    langs = "+".join(l for l in OCR_LANGS if l in have) or "eng"
-            pages_text.append(text_paragraphs(text))
+            if lang is None:
+                # The scan's language: the one Tesseract reads the first page with most confidence.
+                tries = {l: _tesseract(png, l) for l in candidates}
+                mean = lambda c: sum(c) / len(c) if c else 0.0
+                lang = max(tries, key=lambda l: (mean(tries[l][1]), len(tries[l][1])))
+                paras, conf = tries[lang]
+            else:
+                paras, conf = _tesseract(png, lang)
+            pages_text.append(paras)
+            confidences += conf
     # Running headers: a short first or last paragraph that repeats (digits aside) on many pages.
     count: dict[str, int] = {}
     for paras in pages_text:
@@ -163,7 +182,11 @@ def ocr_paragraphs(data: bytes) -> tuple[list[str], dict]:
                 count[_repeat_key(p)] = count.get(_repeat_key(p), 0) + 1
     running = {k for k, n in count.items() if k and n >= max(3, len(pages_text) // 5)}
     paragraphs = [p for paras in pages_text for p in paras if not PAGE_NUMBER.match(p) and _repeat_key(p) not in running]
-    return mend_breaks(paragraphs), {"ocr": True, "ocr_languages": langs}
+    confidence = round(sum(confidences) / len(confidences)) if confidences else 0
+    meta = {"ocr": True, "ocr_languages": lang, "ocr_confidence": confidence}
+    if confidence < OCR_POOR:
+        meta["ocr_poor"] = f"OCR confidence {confidence}%: the scan is too poor to trust its text; read it as the PDF"
+    return mend_breaks(paragraphs), meta
 
 
 def second_extraction(page: str) -> str:
