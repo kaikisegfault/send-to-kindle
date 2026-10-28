@@ -105,6 +105,8 @@ def prepare(doc: Document, fmt: str | None, title: str | None = None) -> tuple[b
         from .sources import with_text
 
         with_text(doc)  # a scan gets its text by OCR here
+        if doc.meta.get("ocr_poor"):
+            raise ValueError(doc.meta["ocr_poor"])
         if not (doc.text or "").strip():
             raise ValueError(f"no text found in this PDF ({doc.meta.get('pages')} pages), not even by OCR: send it as the original PDF")
     data = to_epub(doc, title)
