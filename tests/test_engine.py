@@ -146,7 +146,9 @@ class Styling(unittest.TestCase):
         self.assertEqual(len(re.findall(r'class="[^"]*\bkeep\b', body)), 2, body)
         self.assertEqual(chk["kept_pct"], 100.0)
         page = "<div class='post'><div class='inner'><h2>Part one</h2><p>" + "words " * 40 + "</p><h3>Detail</h3><p>more text here</p></div></div>"
-        art = convert.to_epub(sources.from_text(page, title="Wrapped", markdown=True))
+        from send_to_kindle.document import Document
+
+        art = convert.to_epub(Document("article", "Wrapped", "t", "epub", body=page, text=extract.html_text(page)))
         z = zipfile.ZipFile(io.BytesIO(art))
         body = "".join(z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml") and "nav" not in n)
         self.assertEqual(len(re.findall(r'class="[^"]*\bkeep\b', body)), 2, body)
