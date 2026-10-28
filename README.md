@@ -40,7 +40,11 @@ go as they are (every page exactly as printed) or as EPUB (reflowing text on the
 - **PDFs** become one continuous text in reading order. A word or sentence cut by a page break is
   joined again. Left out on purpose: page numbers, and running headers and footers (a short line in
   the page margin that repeats on many pages); the report quotes what was removed. Pages with no
-  text (scans) are listed; a PDF that is only scans is refused for EPUB, send it as PDF.
+  text are listed.
+- **Scanned PDFs** (pages that are pictures): converted or read through OCR (Tesseract, on the
+  server; nothing leaves it). The scan's language is the one Tesseract reads the first page with
+  most confidence (English, Russian, Georgian installed). The report gives the mean word confidence;
+  under 60% the scan is refused for EPUB as too poor to trust: send it as the PDF.
 - **Not kept**: covers, tables of contents, page maps, page layout, images in converted PDFs and
   articles. If the layout matters, send the PDF as it is.
 - **Styling**: none that fights the Kindle. The EPUB's stylesheet (`send_to_kindle/kindle.css`) sets
@@ -50,7 +54,9 @@ go as they are (every page exactly as printed) or as EPUB (reflowing text on the
   (`keep.lua`). The language is set from the text's script, for the Kindle's dictionary and
   hyphenation. An EPUB sent with `format: "epub"` is rebuilt this way; without it, it goes as it is.
 - **Articles**: the article text without menus, ads and comments (trafilatura, tuned to keep rather
-  than drop). Pages that only render in a browser can't be read.
+  than drop), checked by a second, independent extractor (Mozilla's Readability). If the second one
+  holds everything the first found and more, its fuller text is used; if they disagree, the report
+  says so, so the page can be looked at. Pages that only render in a browser can't be read.
 - **YouTube**: the full transcript from YouTube's own captions (made by people first, otherwise
   YouTube's speech recognition of the original audio). A video with no captions is refused.
 
@@ -148,13 +154,16 @@ Every request carries `Authorization: Bearer <STK_TOKEN>`. A *source* is one of
 | `POST /send` | `{"source": …, "format": "original"\|"epub", "title": "…"}` | 1:1. Without a format, files Kindle takes go as they are and everything else becomes EPUB |
 | `POST /send` | `{"content": "markdown", "title": "…", "instructions": "…", "from": [ids]}` | Sends written content as EPUB |
 | `POST /read` | `{"source": …, "offset": 0}` | The source's full text, up to 60,000 characters at a time; logs the source as user-provided |
+| `POST /send` | `{"content": "markdown", "faithful": true, "from": [id], "title": "…"}` | 1:1 formatted: a source reformatted by an assistant (punctuation, capitals, paragraphs). Every source word must still be there (98% or more), or it is refused |
+| `POST /remove` | `{"ids": [ids], "reason": "…"}` | Deletes items' files; their ledger rows stay, marked removed, so no ID comes back |
 | `GET /inbox` | | Files waiting in `inbox/`, and the last ledger rows |
 | `GET /item/<id>` | | One ledger row, as `item` |
 | `POST /inbound` | a raw email | The email inbox (from the Worker) |
 | `GET /health` | | No token needed |
 
-A request answers within about 50 seconds. A longer job carries on, replies `{"status": "working"}`,
-and its result appears in the ledger.
+A request answers within about 50 seconds. A longer job (a long scan, say) carries on, replies
+`{"status": "working"}`, appears in the ledger when done, and a short mail to the sender address
+says how it ended. Fetching, OCR and conversion don't hold up other requests.
 
 ## Command line
 
