@@ -63,12 +63,24 @@ def _parts(msg: EmailMessage) -> tuple[list[tuple[str, bytes]], list[str]]:
     return files, links
 
 
+def _keep_refused(cfg: Config, raw: bytes) -> None:
+    """The last few refused mails, for diagnosis (only in the service's own state directory)."""
+    import time
+
+    box = cfg.work_dir / "refused-mail"
+    box.mkdir(parents=True, exist_ok=True)
+    (box / f"{int(time.time())}.eml").write_bytes(raw)
+    for old in sorted(box.glob("*.eml"))[:-5]:
+        old.unlink(missing_ok=True)
+
+
 def handle(cfg: Config, raw: bytes) -> dict:
     msg = BytesParser(policy=policy.default).parsebytes(raw)
     sender = parseaddr(str(msg.get("From", "")))[1].lower()
     if sender not in cfg.inbox_senders:
         return {"taken": False, "reason": f"{sender or 'unknown sender'} is not allowed"}
     if not _dkim_ok(raw, sender):
+        _keep_refused(cfg, raw)
         return {"taken": False, "reason": f"no valid DKIM signature from {sender.split('@')[-1]}"}
     subject = str(msg.get("Subject", "")).strip()
     files, links = _parts(msg)
