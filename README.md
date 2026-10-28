@@ -143,7 +143,7 @@ Every request carries `Authorization: Bearer <STK_TOKEN>`. A *source* is one of
 | `POST /send` | `{"content": "markdown", "title": "…", "instructions": "…", "from": [ids]}` | Sends written content as EPUB |
 | `POST /read` | `{"source": …, "offset": 0}` | The source's full text, up to 60,000 characters at a time; logs the source as user-provided |
 | `GET /inbox` | | Files waiting in `inbox/`, and the last ledger rows |
-| `GET /item/<id>` | | One ledger row |
+| `GET /item/<id>` | | One ledger row, as `item` |
 | `POST /inbound` | a raw email | The email inbox (from the Worker) |
 | `GET /health` | | No token needed |
 

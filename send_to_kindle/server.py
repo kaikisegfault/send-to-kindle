@@ -4,7 +4,7 @@
                    {"content": "markdown", "title": "...", "instructions": "...", "from": [ids]}   written content
     POST /read     {"source": {...}, "offset": 0}        the source's full text, in parts
     GET  /inbox                                          files waiting in the library's inbox/
-    GET  /item/<id>                                      one ledger row
+    GET  /item/<id>                                      one ledger row, as "item"
     POST /inbound  raw email (message/rfc822)            the email inbox; answers at once, works after
     GET  /health
 
@@ -84,7 +84,7 @@ def make_handler(cfg: Config):
                 if self.path == "/inbox":
                     return self._reply(200, {"status": "ok", **jobs.inbox(cfg)})
                 if self.path.startswith("/item/"):
-                    return self._reply(200, {"status": "ok", **jobs.status(cfg, int(self.path.rsplit("/", 1)[-1]))})
+                    return self._reply(200, {"status": "ok", "item": jobs.status(cfg, int(self.path.rsplit("/", 1)[-1]))})
             except Exception as e:  # noqa: BLE001
                 return self._reply(400, {"status": "error", "error": str(e)})
             return self._reply(404, {"status": "error", "error": "not found"})
