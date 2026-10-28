@@ -1,0 +1,7 @@
+yt-dlp[default]>=2025.10.0
+trafilatura>=2.0
+pymupdf>=1.24
+requests[socks]>=2.31
+dkimpy>=1.1
+dnspython>=2.4
+lxml_html_clean>=0.4

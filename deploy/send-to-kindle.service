@@ -1,0 +1,37 @@
+[Unit]
+Description=send-to-kindle engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kindle
+Group=kindle
+EnvironmentFile=/etc/send-to-kindle/settings
+Environment=HOME=/var/lib/send-to-kindle
+WorkingDirectory=/var/lib/send-to-kindle
+ExecStart=/opt/send-to-kindle/.venv/bin/python -m send_to_kindle serve
+Restart=on-failure
+RestartSec=5
+
+# Lowest priority: anything else on the server always comes first.
+Nice=19
+CPUWeight=10
+IOSchedulingClass=idle
+MemoryHigh=600M
+MemoryMax=900M
+TasksMax=64
+
+# Hardening: it can write only its own state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/send-to-kindle
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

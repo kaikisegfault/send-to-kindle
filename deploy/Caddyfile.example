@@ -1,0 +1,15 @@
+# HTTPS in front of the engine (which listens on 127.0.0.1:8735 only).
+# Replace the host name with yours and point its DNS at the server.
+kindle.example.com {
+	# If only port 443 is open, take the certificate through the TLS-ALPN challenge:
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+	request_body {
+		max_size 40MB
+	}
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy 127.0.0.1:8735
+}

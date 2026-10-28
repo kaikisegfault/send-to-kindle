@@ -1,0 +1,9 @@
+{
+  // The email inbox Worker. Deploy: npx wrangler deploy --config inbox-worker/wrangler.jsonc
+  // Then add its three secrets (see src/index.js) and route your inbox address to it in Email Routing.
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "send-to-kindle-inbox",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-11",
+  "observability": { "enabled": true }
+}
