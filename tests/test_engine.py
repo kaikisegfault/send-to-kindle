@@ -186,6 +186,40 @@ class Article(unittest.TestCase):
         self.assertNotIn("Login", extract.epub_text(epub))
 
 
+class Extractions(unittest.TestCase):
+    def test_agree_superset_disagree(self):
+        base = " ".join(f"w{i}" for i in range(500))
+        self.assertFalse(sources.compare_extractions(base, base)["use_second"])
+        fuller = base + " " + " ".join(f"extra{i}" for i in range(200))
+        v = sources.compare_extractions(base, fuller)
+        self.assertTrue(v["use_second"])
+        other = " ".join(f"z{i}" for i in range(400))
+        v = sources.compare_extractions(base, other)
+        self.assertTrue(v["flag"])
+        self.assertFalse(v["use_second"])
+
+
+class Ocr(unittest.TestCase):
+    def test_scanned_pdf_is_read_by_ocr(self):
+        import shutil
+
+        if not shutil.which("tesseract"):
+            self.skipTest("tesseract is not installed here")
+        import pymupdf
+
+        text_pdf = pymupdf.open()
+        page = text_pdf.new_page()
+        page.insert_textbox(pymupdf.Rect(50, 50, 550, 400), "Reading on a Kindle in bed is calm and quiet.", fontsize=20)
+        pix = page.get_pixmap(dpi=200)
+        scan = pymupdf.open()
+        scan.new_page().insert_image(pymupdf.Rect(0, 0, 595, 842), pixmap=pix)
+        doc = sources.from_bytes(scan.tobytes(), name="scan.pdf", origin="t")
+        self.assertTrue(doc.meta["scan"])
+        epub, ext, chk = convert.prepare(doc, "epub")
+        self.assertIn("Kindle", extract.epub_text(epub))
+        self.assertTrue(chk["ocr"])
+
+
 class Flow(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -231,6 +265,36 @@ class Flow(unittest.TestCase):
         self.assertEqual(rows[1]["from"], "1")
         self.assertEqual(rows[1]["instructions"], "ultra brief")
         self.assertEqual(res["id"], 2)
+
+    def test_formatted_one_to_one_is_checked_word_by_word(self):
+        (self.lib.dir / "inbox" / "talk.md").write_text("# Talk\n\nso today we talk about books and how we read them\n")
+        r = jobs.read(self.cfg, {"source": {"path": "inbox/talk.md"}})
+        good = "# Talk\n\nSo today we talk about books, and how we read them."
+        res = jobs.send(self.cfg, {"content": good, "title": "Talk", "faithful": True, "from": [r["id"]]})
+        self.assertEqual(res["mode"], "1:1 formatted")
+        self.assertEqual(res["check"]["kept_pct"], 100.0)
+        dropped = "# Talk\n\nSo today we talk."
+        with self.assertRaises(ValueError):
+            jobs.send(self.cfg, {"content": dropped, "title": "Talk", "faithful": True, "from": [r["id"]]})
+
+    def test_read_in_parts_extracts_once(self):
+        (self.lib.dir / "inbox" / "long.md").write_text("# Long\n\n" + "word " * 30000)
+        first = jobs.read(self.cfg, {"source": {"path": "inbox/long.md"}, "limit": 60000})
+        self.assertIsNotNone(first["next_offset"])
+        with mock.patch("send_to_kindle.jobs._load", side_effect=AssertionError("extracted again")):
+            second = jobs.read(self.cfg, {"source": {"id": first["id"]}, "offset": first["next_offset"]})
+        self.assertEqual(second["id"], first["id"])
+
+    def test_remove_keeps_ids_unique(self):
+        (self.lib.dir / "inbox" / "a.pdf").write_bytes(make_pdf(["a"]))
+        jobs.send(self.cfg, {"source": {"path": "inbox/a.pdf"}})
+        jobs.remove(self.cfg, {"ids": [1, 2], "reason": "test"})
+        rows = self.lib.rows()
+        self.assertTrue(all(r["status"] == "removed: test" for r in rows))
+        self.assertFalse(self.lib.path(rows[1]).exists())
+        self.assertEqual(self.lib.next_id(), 3)
+        with self.assertRaises(ValueError):
+            jobs.send(self.cfg, {"source": {"id": 2}})
 
     def test_failed_send_moves_nothing(self):
         (self.lib.dir / "inbox" / "x.pdf").write_bytes(make_pdf(["x"]))

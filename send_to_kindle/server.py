@@ -2,15 +2,17 @@
 
     POST /send     {"source": {...}, "format": "original"|"epub", "title": "..."}   1:1
                    {"content": "markdown", "title": "...", "instructions": "...", "from": [ids]}   written content
-    POST /read     {"source": {...}, "offset": 0}        the source's full text, in parts
+                   {"content": "markdown", "faithful": true, "from": [id]}   a source reformatted, checked word by word
+    POST /read     {"source": {...}, "offset": 0}        the source's full text, in parts (OCR for scans)
+    POST /remove   {"ids": [ids], "reason": "..."}       delete items' files; their rows stay, marked removed
     GET  /inbox                                          files waiting in the library's inbox/
     GET  /item/<id>                                      one ledger row, as "item"
     POST /inbound  raw email (message/rfc822)            the email inbox; answers at once, works after
     GET  /health
 
 A source is {"url": "..."}, {"path": "inbox/file.pdf"}, {"id": 12} or {"text": "...", "title": "..."}.
-Long jobs answer within ~50 s; if one takes longer the reply says it is still working, and the ledger
-shows the result when it is done.
+Long jobs answer within ~50 s; if one takes longer the reply says it is still working, the ledger shows
+the result when it is done, and a short mail tells the sender address how it ended.
 """
 
 from __future__ import annotations
@@ -30,8 +32,25 @@ MAX_BODY = 40 * 1024 * 1024
 WAIT = 50
 
 
-def run_with_deadline(fn, *args) -> dict:
+def _late_report(cfg: Config, what: str, box: dict) -> None:
+    """A job that outlasted its request: tell the owner by mail how it ended."""
+    from . import check, mail
+
+    if "error" in box:
+        subject, text = f"Kindle: {what} failed", box["error"]
+    else:
+        r = box["result"]
+        subject = f"Kindle: {what} done"
+        text = f"Item {r.get('id')}: {r.get('title')} ({r.get('format', '')}). {check.describe(r.get('check') or {})}".strip()
+    try:
+        mail.notify(cfg, cfg.sender, subject, text)
+    except Exception:  # noqa: BLE001
+        log.error("late report failed\n%s", traceback.format_exc())
+
+
+def run_with_deadline(cfg: Config, what: str, fn, *args) -> dict:
     box: dict = {}
+    guard = threading.Lock()
 
     def work():
         try:
@@ -39,12 +58,18 @@ def run_with_deadline(fn, *args) -> dict:
         except Exception as e:  # noqa: BLE001 - reported to the caller as text
             log.error("job failed: %s\n%s", e, traceback.format_exc())
             box["error"] = str(e)
+        with guard:
+            late = box.get("late")
+        if late:
+            _late_report(cfg, what, box)
 
     t = threading.Thread(target=work, daemon=True)
     t.start()
     t.join(WAIT)
-    if t.is_alive():
-        return {"status": "working", "note": "still working; the ledger shows the result when it is done"}
+    with guard:
+        if "result" not in box and "error" not in box:
+            box["late"] = True
+            return {"status": "working", "note": "still working; it carries on, the ledger shows the result and a mail reports it"}
     if "error" in box:
         return {"status": "error", "error": box["error"]}
     return {"status": "ok", **box["result"]}
@@ -104,9 +129,11 @@ def make_handler(cfg: Config):
             except json.JSONDecodeError:
                 return self._reply(400, {"status": "error", "error": "body is not JSON"})
             if self.path == "/send":
-                result = run_with_deadline(jobs.send, cfg, req)
+                result = run_with_deadline(cfg, "send", jobs.send, cfg, req)
             elif self.path == "/read":
-                result = run_with_deadline(jobs.read, cfg, req)
+                result = run_with_deadline(cfg, "read", jobs.read, cfg, req)
+            elif self.path == "/remove":
+                result = run_with_deadline(cfg, "remove", jobs.remove, cfg, req)
             else:
                 return self._reply(404, {"status": "error", "error": "not found"})
             return self._reply(200 if result["status"] != "error" else 422, result)

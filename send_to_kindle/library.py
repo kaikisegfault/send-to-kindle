@@ -81,6 +81,14 @@ class Library:
     def next_id(self) -> int:
         return max((int(r["id"]) for r in self.rows() if r["id"].isdigit()), default=0) + 1
 
+    def rewrite(self, rows: list[dict]) -> None:
+        """The whole ledger written again (to mark items removed); rows keep their IDs and order."""
+        with self.ledger.open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=FIELDS, lineterminator="\n")
+            w.writeheader()
+            for row in rows:
+                w.writerow({k: row.get(k, "") for k in FIELDS})
+
     def _append(self, row: dict) -> None:
         new = not self.ledger.exists()
         with self.ledger.open("a", newline="", encoding="utf-8") as f:
@@ -93,8 +101,9 @@ class Library:
         return next((r for r in self.rows() if r["id"] == str(item_id)), None)
 
     def find_source(self, source: str) -> dict | None:
-        """The user-provided item already made for this link, if any."""
-        return next((r for r in self.rows() if r["folder"] == "user-provided" and r["source"] == source), None)
+        """The user-provided item already made for this link, if any (and not removed)."""
+        return next((r for r in self.rows() if r["folder"] == "user-provided" and r["source"] == source
+                     and not r["status"].startswith("removed")), None)
 
     # ---------------------------------------------------------------- items --
 

@@ -101,10 +101,20 @@ def prepare(doc: Document, fmt: str | None, title: str | None = None) -> tuple[b
         if not doc.is_file or doc.ext not in KINDLE_FORMATS:
             raise ValueError(f"a {doc.kind} has no original file to send: use epub")
         return doc.data, doc.ext, {}
-    if doc.kind == "pdf" and not (doc.text or "").strip():
-        raise ValueError(f"this PDF is a scan ({doc.meta.get('pages')} pages of images, no text): send it as the original PDF")
+    if doc.kind == "pdf":
+        from .sources import with_text
+
+        with_text(doc)  # a scan gets its text by OCR here
+        if not (doc.text or "").strip():
+            raise ValueError(f"no text found in this PDF ({doc.meta.get('pages')} pages), not even by OCR: send it as the original PDF")
     data = to_epub(doc, title)
     result = check.compare(doc.text or "", extract.epub_text(data))
+    if doc.meta.get("ocr"):
+        result["ocr"] = doc.meta.get("ocr_languages", True)
+    if doc.meta.get("second_extractor"):
+        result["second_extractor"] = doc.meta["second_extractor"]
+    if doc.meta.get("check_page"):
+        result["check_page"] = doc.meta["check_page"]
     if doc.kind == "pdf":
         result["pages"] = doc.meta.get("pages")
         if doc.meta.get("empty_pages"):

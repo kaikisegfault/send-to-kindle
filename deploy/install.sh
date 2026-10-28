@@ -7,7 +7,7 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 
-apt-get install -y -qq pandoc poppler-utils python3-venv git >/dev/null
+apt-get install -y -qq pandoc poppler-utils python3-venv git tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus tesseract-ocr-kat >/dev/null
 
 id kindle >/dev/null 2>&1 || useradd --system --home-dir /var/lib/send-to-kindle --shell /usr/sbin/nologin kindle
 install -d -o kindle -g kindle -m 750 /var/lib/send-to-kindle

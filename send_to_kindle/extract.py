@@ -104,6 +104,75 @@ def mend_breaks(paragraphs: list[str]) -> list[str]:
     return out
 
 
+SCAN_SHARE = 0.8  # a PDF with no text on at least this share of its pages is a scan
+OCR_LANGS = ("eng", "rus", "kat")  # tried on the first page; the rest of the scan uses what it finds
+
+
+def is_scan(meta: dict) -> bool:
+    pages = meta.get("pages") or 0
+    return bool(pages) and len(meta.get("empty_pages") or []) >= pages * SCAN_SHARE
+
+
+def _tesseract(png: bytes, langs: str) -> str:
+    import os
+
+    env = dict(os.environ, OMP_THREAD_LIMIT="1")  # one core: the server's other work comes first
+    with tempfile.TemporaryDirectory() as tmp:
+        img = Path(tmp) / "page.png"
+        img.write_bytes(png)
+        r = subprocess.run(["tesseract", str(img), "stdout", "-l", langs, "--psm", "3"], capture_output=True, env=env, timeout=600)
+    if r.returncode != 0:
+        raise RuntimeError(f"tesseract failed: {r.stderr.decode()[:300]}")
+    return r.stdout.decode("utf-8", "replace")
+
+
+def _installed_langs() -> set[str]:
+    try:
+        r = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=30)
+    except OSError:
+        return set()
+    return {l.strip() for l in r.stdout.splitlines()[1:] if l.strip()}
+
+
+def ocr_paragraphs(data: bytes) -> tuple[list[str], dict]:
+    """A scanned PDF's text by OCR (Tesseract, on this machine; nothing leaves it). Page by page, in order;
+    page numbers and running headers left out as for text PDFs. OCR can misread a word."""
+    import pymupdf
+    from .convert import guess_lang
+
+    have = _installed_langs()
+    if not have:
+        raise ValueError("this PDF is a scan and OCR (tesseract) isn't installed: send it as the original PDF")
+    langs = "+".join(l for l in OCR_LANGS if l in have) or "eng"
+    pages_text: list[list[str]] = []
+    with pymupdf.open(stream=data, filetype="pdf") as doc:
+        for number, page in enumerate(doc):
+            png = page.get_pixmap(dpi=300, colorspace=pymupdf.csGRAY).tobytes("png")
+            text = _tesseract(png, langs)
+            if number == 0:
+                lang = guess_lang(text)
+                langs = {"ka": "kat", "ru": "rus", "en": "eng"}.get(lang or "", langs)
+                if langs not in have:
+                    langs = "+".join(l for l in OCR_LANGS if l in have) or "eng"
+            pages_text.append(text_paragraphs(text))
+    # Running headers: a short first or last paragraph that repeats (digits aside) on many pages.
+    count: dict[str, int] = {}
+    for paras in pages_text:
+        for p in {paras[0], paras[-1]} if paras else set():
+            if len(p) <= 100:
+                count[_repeat_key(p)] = count.get(_repeat_key(p), 0) + 1
+    running = {k for k, n in count.items() if k and n >= max(3, len(pages_text) // 5)}
+    paragraphs = [p for paras in pages_text for p in paras if not PAGE_NUMBER.match(p) and _repeat_key(p) not in running]
+    return mend_breaks(paragraphs), {"ocr": True, "ocr_languages": langs}
+
+
+def second_extraction(page: str) -> str:
+    """The article text by a second, independent extractor (Mozilla's Readability), to check the first."""
+    from readability import Document as Readable
+
+    return html_text(Readable(page).summary(html_partial=True))
+
+
 def pdftotext_words(data: bytes) -> int | None:
     """Word count by a second, independent extractor (poppler's pdftotext), to cross-check PyMuPDF."""
     try:
