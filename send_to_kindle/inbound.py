@@ -25,9 +25,11 @@ LINK = re.compile(r"https?://[^\s<>\")\]]+")
 FOOTER_HOSTS = ("proton.me", "pm.me", "protonmail.com", "google.com", "gmail.com", "accounts.google.com")
 
 
-def _dkim_ok(raw: bytes, sender: str) -> bool:
+def _dkim_ok(raw: bytes, sender: str, dnsfunc=None) -> bool:
+    """A valid DKIM signature whose domain is the sender's own (or its parent). dnsfunc: for tests."""
     import dkim
 
+    lookup = {"dnsfunc": dnsfunc} if dnsfunc else {}
     domain = sender.rsplit("@", 1)[-1].lower()
     msg = BytesParser(policy=policy.compat32).parsebytes(raw)
     sigs = msg.get_all("DKIM-Signature") or []
@@ -36,9 +38,9 @@ def _dkim_ok(raw: bytes, sender: str) -> bool:
         d = tags.get("d", "").strip().lower()
         if d == domain or domain.endswith("." + d):
             try:
-                if dkim.verify(raw, index=i):
+                if dkim.DKIM(raw).verify(idx=i, **lookup):
                     return True
-            except Exception:
+            except dkim.DKIMException:
                 continue
     return False
 
