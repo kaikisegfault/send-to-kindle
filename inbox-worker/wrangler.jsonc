@@ -5,5 +5,7 @@
   "name": "send-to-kindle-inbox",
   "main": "src/index.js",
   "compatibility_date": "2026-06-11",
+  // Mail only: no web address.
+  "workers_dev": false,
   "observability": { "enabled": true }
 }

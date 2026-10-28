@@ -127,7 +127,7 @@ kindle-content/
   sent/           everything that went to the Kindle
 ```
 
-Every item gets its own ID from one counter. A sent row's `from` names the items it was made from.
+Every item gets its own ID from one counter; dates are UTC. A sent row's `from` names the items it was made from.
 When a file goes to the Kindle unchanged, `sent/` holds the file and `user-provided/` only a short
 note pointing at it, so nothing is stored twice. A failed send is a ledger row with its reason.
 
