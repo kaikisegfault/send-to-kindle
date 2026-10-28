@@ -7,7 +7,7 @@ Wants=network-online.target
 User=kindle
 Group=kindle
 EnvironmentFile=/etc/send-to-kindle/settings
-Environment=HOME=/var/lib/send-to-kindle
+Environment=HOME=/var/lib/send-to-kindle PYTHONPATH=/opt/send-to-kindle
 WorkingDirectory=/var/lib/send-to-kindle
 ExecStart=/opt/send-to-kindle/.venv/bin/python -m send_to_kindle serve
 Restart=on-failure

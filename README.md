@@ -60,8 +60,8 @@ a mail account that can send by SMTP, and a Kindle.
    E-mail List* (the full address). Amazon drops mail from other senders without telling anyone.
 3. **Install** on the server, as root, from a checkout of this repository:
    ```sh
-   git clone https://github.com/kaikisegfault/send-to-kindle.git && cd send-to-kindle
-   sudo ./deploy/install.sh
+   sudo git clone https://github.com/kaikisegfault/send-to-kindle.git /opt/send-to-kindle-src
+   cd /opt/send-to-kindle-src && sudo ./deploy/install.sh
    ```
 4. **Settings.** Fill in `/etc/send-to-kindle/settings` (table below), then
    `sudo systemctl restart send-to-kindle`. Make the token long and random, e.g.
@@ -90,6 +90,9 @@ a mail account that can send by SMTP, and a Kindle.
    `inbox-worker/` (`npx wrangler deploy --config inbox-worker/wrangler.jsonc`), give it its three
    secrets (`ENGINE_URL`, `STK_TOKEN`, `ALLOWED_SENDERS`), and route an address such as
    `kindle@your-domain` to the Worker. Set `STK_INBOX_SENDERS` to the same addresses.
+
+**Updating** later: `cd /opt/send-to-kindle-src && sudo git pull && sudo ./deploy/install.sh`
+(install the first time from that same place: `sudo git clone … /opt/send-to-kindle-src`).
 
 ## Settings
 
