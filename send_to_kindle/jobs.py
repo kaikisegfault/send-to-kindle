@@ -41,12 +41,13 @@ def _load(lib: Library, cfg: Config, src: dict) -> tuple[Document, str, Path | N
 
 
 def _provided(lib: Library, doc: Document, label: str, inbox_file: Path | None, *, keep_text: bool, sent_as: int | None = None,
-              sent_unchanged: bool = False, instructions: str = "", mode: str = "1:1") -> dict:
+              sent_unchanged: bool = False, instructions: str = "", mode: str = "1:1", title: str | None = None) -> dict:
     """Log what the request was given. Files keep their original unless the Kindle gets them unchanged
     (then sent/ has the file and this is a note); links and text become .md notes."""
+    title = title or doc.title
     common = dict(mode=mode, source=label, status="provided", instructions=instructions)
     if inbox_file is not None and not sent_unchanged:
-        return lib.add("user-provided", doc.title, inbox_file.suffix.lstrip(".").lower() or doc.ext, move=inbox_file, format=doc.ext, **common)
+        return lib.add("user-provided", title, inbox_file.suffix.lstrip(".").lower() or doc.ext, move=inbox_file, format=doc.ext, **common)
     lines = [f"Source: {label}", f"Kind: {doc.kind}"]
     if doc.meta.get("channel"):
         lines.append(f"Channel: {doc.meta['channel']}")
@@ -55,7 +56,7 @@ def _provided(lib: Library, doc: Document, label: str, inbox_file: Path | None, 
     text = doc.text if keep_text and not doc.is_file else None
     if doc.kind in ("text", "markdown") and not doc.origin.startswith(("inbox", "user-provided", "sent")):
         text = doc.body if doc.kind == "markdown" else doc.text
-    return lib.add("user-provided", doc.title, "md", data=note(doc.title, lines, text), format="md", **common)
+    return lib.add("user-provided", title, "md", data=note(title, lines, text), format="md", **common)
 
 
 def send(cfg: Config, req: dict) -> dict:
@@ -90,7 +91,7 @@ def send(cfg: Config, req: dict) -> dict:
             raise
 
         if mode == "1:1" and existing is None:
-            provided = _provided(lib, doc, label, inbox_file, keep_text=False, sent_as=lib.next_id() + 1, sent_unchanged=unchanged)
+            provided = _provided(lib, doc, label, inbox_file, keep_text=False, sent_as=lib.next_id() + 1, sent_unchanged=unchanged, title=title)
             from_ids = [provided["id"]]
         fields = dict(mode=mode, format=ext, source=label, check=check.describe(chk), status="sent", instructions=instructions)
         fields["from"] = " ".join(from_ids)
