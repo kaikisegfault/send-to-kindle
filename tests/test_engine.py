@@ -132,6 +132,25 @@ class Styling(unittest.TestCase):
         self.assertRegex(body, keep + r'<h2[^>]*>1984</h2>\s*<ul>')
         self.assertEqual(r["check"]["kept_pct"], 100.0)
 
+    def test_headings_inside_wrappers_and_rebuilt_epubs_are_kept_too(self):
+        if convert.pandoc_major() < 3:
+            self.skipTest("pandoc 2.x trips over the keep filter on nested input (the engine then builds without it)")
+        old = self.build("# Tier 1\n\n## Siddhartha\n\nA journey.\n\n## Fahrenheit 451\n\nBooks burn.\n")["epub"]
+        doc = sources.from_bytes(old, name="old.epub", origin="t")
+        rebuilt, _, chk = convert.prepare(doc, "epub")
+        import io
+        import zipfile
+
+        z = zipfile.ZipFile(io.BytesIO(rebuilt))
+        body = "".join(z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml") and "nav" not in n)
+        self.assertEqual(len(re.findall(r'class="[^"]*\bkeep\b', body)), 2, body)
+        self.assertEqual(chk["kept_pct"], 100.0)
+        page = "<div class='post'><div class='inner'><h2>Part one</h2><p>" + "words " * 40 + "</p><h3>Detail</h3><p>more text here</p></div></div>"
+        art = convert.to_epub(sources.from_text(page, title="Wrapped", markdown=True))
+        z = zipfile.ZipFile(io.BytesIO(art))
+        body = "".join(z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml") and "nav" not in n)
+        self.assertEqual(len(re.findall(r'class="[^"]*\bkeep\b', body)), 2, body)
+
     def test_no_title_page_where_pandoc_allows(self):
         if not convert._pandoc_has("--epub-title-page"):
             self.skipTest("this pandoc always writes a title page")

@@ -17,6 +17,13 @@ KEEP = HERE / "keep.lua"  # headings stay on the page of the text after them
 
 
 @functools.lru_cache(maxsize=1)
+def pandoc_major() -> int:
+    r = subprocess.run(["pandoc", "--version"], capture_output=True, text=True, timeout=30)
+    m = re.match(r"pandoc\S*\s+(\d+)", r.stdout)
+    return int(m.group(1)) if m else 0
+
+
+@functools.lru_cache(maxsize=8)
 def _pandoc_has(option: str) -> bool:
     r = subprocess.run(["pandoc", "--help"], capture_output=True, text=True, timeout=30)
     return option in r.stdout
@@ -67,6 +74,10 @@ def to_epub(doc: Document, title: str | None = None) -> bytes:
             cmd += ["--metadata", f"author={author}"]
         cmd.append(str(src))
         r = subprocess.run(cmd, capture_output=True, timeout=600)
+        if r.returncode != 0:
+            # Old pandoc (2.x) can trip over the keep filter on nested input: build without it.
+            i = cmd.index("--lua-filter")
+            r = subprocess.run(cmd[:i] + cmd[i + 2:], capture_output=True, timeout=600)
         if r.returncode != 0:
             raise RuntimeError(f"pandoc failed: {r.stderr.decode()[:400]}")
         data = out.read_bytes()
