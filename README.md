@@ -43,6 +43,12 @@ go as they are (every page exactly as printed) or as EPUB (reflowing text on the
   text (scans) are listed; a PDF that is only scans is refused for EPUB, send it as PDF.
 - **Not kept**: covers, tables of contents, page maps, page layout, images in converted PDFs and
   articles. If the layout matters, send the PDF as it is.
+- **Styling**: none that fights the Kindle. The EPUB's stylesheet (`send_to_kindle/kindle.css`) sets
+  no colours, backgrounds, fonts or line heights, so the reader's theme (including dark mode), font
+  and spacing apply, and no boxes appear behind the text. There is no title page; each top-level
+  heading starts a chapter, and every other heading is kept on the same page as the text after it
+  (`keep.lua`). The language is set from the text's script, for the Kindle's dictionary and
+  hyphenation. An EPUB sent with `format: "epub"` is rebuilt this way; without it, it goes as it is.
 - **Articles**: the article text without menus, ads and comments (trafilatura, tuned to keep rather
   than drop). Pages that only render in a browser can't be read.
 - **YouTube**: the full transcript from YouTube's own captions (made by people first, otherwise

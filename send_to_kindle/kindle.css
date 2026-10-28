@@ -1,0 +1,88 @@
+/* send-to-kindle: the stylesheet of every EPUB it builds.
+ *
+ * Kindle-friendly by leaving things out: no text or background colours, no fonts, no line heights and
+ * no body font size, so the reader's own theme (white, sepia, green, dark), font and spacing apply and
+ * nothing draws boxes behind the text (Amazon: remove font-color and background-color; body text at the
+ * default size and line height). Borders take the text's own colour. Headings stay with what follows.
+ */
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+p {
+  margin: 0 0 0.8em 0;
+  text-indent: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-align: left;
+  font-weight: bold;
+  margin: 1.4em 0 0.5em 0;
+  page-break-after: avoid;
+  break-after: avoid;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+h1 { font-size: 1.45em; margin-top: 0.6em; }
+h2 { font-size: 1.25em; }
+h3 { font-size: 1.1em; }
+h4, h5, h6 { font-size: 1em; }
+
+/* A heading and the block after it, wrapped by keep.lua (pandoc makes the wrapper the heading's
+ * section): never split between two pages. */
+.keep {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+ul, ol {
+  margin: 0 0 0.8em 1.4em;
+  padding: 0;
+}
+
+li {
+  margin: 0 0 0.3em 0;
+}
+
+li > ul, li > ol {
+  margin-top: 0.3em;
+  margin-bottom: 0;
+}
+
+blockquote {
+  margin: 0 0 0.8em 1.2em;
+  font-style: italic;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid;
+  margin: 1.2em 0;
+}
+
+table {
+  border-collapse: collapse;
+  margin: 0 0 0.8em 0;
+}
+
+th, td {
+  border: 1px solid;
+  padding: 0.2em 0.4em;
+  vertical-align: top;
+}
+
+pre {
+  white-space: pre-wrap;
+  margin: 0 0 0.8em 0;
+}
+
+code, pre {
+  font-family: monospace;
+}
+
+img {
+  max-width: 100%;
+}

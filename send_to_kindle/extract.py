@@ -154,25 +154,45 @@ def html_text(markup: str) -> str:
 
 
 def epub_text(data: bytes) -> str:
-    """All readable text of an EPUB, its content files in spine order."""
+    """All readable text of an EPUB: its content files in spine order, without the table of contents."""
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         names = z.namelist()
-        order = _spine(z) or sorted(n for n in names if n.endswith((".xhtml", ".html", ".htm")))
+        order = _spine(z) or sorted(n for n in names if n.endswith((".xhtml", ".html", ".htm")) and "nav" not in n)
         return "\n".join(html_text(z.read(n).decode("utf-8", "replace")) for n in order if n in names)
 
 
-def _spine(z: zipfile.ZipFile) -> list[str]:
+def _opf(z: zipfile.ZipFile):
     import xml.etree.ElementTree as ET
 
     try:
         container = ET.fromstring(z.read("META-INF/container.xml"))
-        opf_path = next(e.get("full-path") for e in container.iter() if e.tag.endswith("rootfile"))
-        opf = ET.fromstring(z.read(opf_path))
+        path = next(e.get("full-path") for e in container.iter() if e.tag.endswith("rootfile"))
+        return path, ET.fromstring(z.read(path))
     except (KeyError, StopIteration, ET.ParseError):
+        return None, None
+
+
+def _spine(z: zipfile.ZipFile) -> list[str]:
+    opf_path, opf = _opf(z)
+    if opf is None:
         return []
     base = opf_path.rsplit("/", 1)[0] + "/" if "/" in opf_path else ""
-    items = {e.get("id"): e.get("href") for e in opf.iter() if e.tag.endswith("}item")}
-    return [base + items[e.get("idref")] for e in opf.iter() if e.tag.endswith("}itemref") and e.get("idref") in items]
+    items = {e.get("id"): e for e in opf.iter() if e.tag.endswith("}item")}
+    order = []
+    for ref in (e for e in opf.iter() if e.tag.endswith("}itemref")):
+        item = items.get(ref.get("idref"))
+        if item is not None and "nav" not in (item.get("properties") or "").split():
+            order.append(base + item.get("href"))
+    return order
+
+
+def epub_title(data: bytes) -> str:
+    """The EPUB's own title (dc:title), or "" if it has none."""
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        _, opf = _opf(z)
+    if opf is None:
+        return ""
+    return next(((e.text or "").strip() for e in opf.iter() if e.tag.endswith("}title")), "")
 
 
 def pandoc_text(data: bytes, fmt: str) -> str:

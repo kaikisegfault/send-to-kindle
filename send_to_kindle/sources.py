@@ -61,7 +61,7 @@ def from_bytes(data: bytes, *, name: str, origin: str, content_type: str = "") -
         title = stem if junk else pdf_title
         return Document("pdf", title, origin, "pdf", data=data, body=extract.paragraphs_html(paragraphs), text="\n\n".join(paragraphs), meta=meta)
     if fmt == "epub":
-        return Document("epub", stem, origin, "epub", data=data, text=extract.epub_text(data))
+        return Document("epub", extract.epub_title(data) or stem, origin, "epub", data=data, text=extract.epub_text(data))
     if fmt == "docx":
         return Document("docx", stem, origin, "docx", data=data, text=extract.pandoc_text(data, "docx"))
     if fmt == "html":

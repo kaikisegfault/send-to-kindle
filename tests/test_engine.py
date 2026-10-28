@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -100,6 +101,56 @@ class Pdf(unittest.TestCase):
         out, ext, chk = convert.prepare(doc, None)
         self.assertIs(out, doc.data)
         self.assertEqual(ext, "pdf")
+
+
+class Styling(unittest.TestCase):
+    """What made Kindle draw boxes behind text and strand headings: colours in the CSS, split headings."""
+
+    def build(self, markdown: str) -> dict:
+        import io
+        import zipfile
+
+        doc = sources.from_text(markdown, title="Wishlist")
+        epub, _, chk = convert.prepare(doc, "epub")
+        z = zipfile.ZipFile(io.BytesIO(epub))
+        css = "".join(z.read(n).decode() for n in z.namelist() if n.endswith(".css"))
+        pages = {n: z.read(n).decode() for n in z.namelist() if n.endswith(".xhtml")}
+        return {"css": css, "pages": pages, "check": chk, "epub": epub}
+
+    def test_css_sets_no_colours_backgrounds_or_fonts(self):
+        css = self.build("# Tier 1\n\n## A book\n\nWhy it matters.\n")["css"]
+        rules = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        for banned in ("background", "color", "font-family: Georgia", "line-height"):
+            self.assertNotIn(banned, rules, banned)
+        self.assertIn(".keep", rules)
+
+    def test_heading_is_kept_with_its_text(self):
+        r = self.build("# Tier 1\n\n## Flowers for Algernon\n\nA short novel.\n\n## 1984\n\n- one\n- two\n")
+        body = "".join(r["pages"].values())
+        keep = r'<(?:div|section)[^>]*class="[^"]*\bkeep\b[^"]*"[^>]*>\s*'
+        self.assertRegex(body, keep + r'<h2[^>]*>Flowers for Algernon</h2>\s*<p>A short novel.</p>\s*</(?:div|section)>')
+        self.assertRegex(body, keep + r'<h2[^>]*>1984</h2>\s*<ul>')
+        self.assertEqual(r["check"]["kept_pct"], 100.0)
+
+    def test_no_title_page_where_pandoc_allows(self):
+        if not convert._pandoc_has("--epub-title-page"):
+            self.skipTest("this pandoc always writes a title page")
+        self.assertFalse(any("title_page" in n for n in self.build("Text.\n")["pages"]))
+
+    def test_language_from_script(self):
+        self.assertEqual(convert.guess_lang("ეს არის ქართული ტექსტი წიგნების შესახებ"), "ka")
+        self.assertEqual(convert.guess_lang("Это русский текст о книгах и чтении"), "ru")
+        self.assertEqual(convert.guess_lang("This is about the books and reading"), "en")
+
+    def test_epub_rebuilt_on_request_and_kept_as_is_otherwise(self):
+        old = self.build("# Old\n\nSome text of an old book.\n")["epub"]
+        doc = sources.from_bytes(old, name="old.epub", origin="t")
+        same, ext, _ = convert.prepare(doc, None)
+        self.assertIs(same, doc.data)
+        rebuilt, ext, chk = convert.prepare(doc, "epub")
+        self.assertEqual(ext, "epub")
+        self.assertIsNot(rebuilt, doc.data)
+        self.assertEqual(chk["kept_pct"], 100.0)
 
 
 class Article(unittest.TestCase):
