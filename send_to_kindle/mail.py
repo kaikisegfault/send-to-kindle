@@ -6,18 +6,53 @@ E-mail List" and drops everything else without a bounce, so a clean send is not 
 
 from __future__ import annotations
 
+import base64
 import mimetypes
 import smtplib
 import ssl
 from email.message import EmailMessage
 from email.utils import make_msgid
 
+import requests
+
 from .config import Config
 
 TYPES = {"epub": "application/epub+zip", "pdf": "application/pdf"}
+CF_SEND = "https://api.cloudflare.com/client/v4/accounts/{}/email/sending/send"
+
+
+def _send_cloudflare(cfg: Config, msg: EmailMessage) -> None:
+    """Cloudflare Email Service's REST API: HTTPS on port 443, for hosts that block outgoing SMTP (Hetzner Cloud
+    blocks 25 and 465, and Cloudflare's own SMTP takes only 465)."""
+    body = msg.get_body(("plain",))
+    payload = {
+        "from": str(msg["From"]),
+        "to": str(msg["To"]),
+        "subject": str(msg["Subject"]),
+        "text": body.get_content() if body else "",
+    }
+    attachments = [
+        {"content": base64.b64encode(part.get_payload(decode=True)).decode("ascii"), "filename": part.get_filename(),
+         "type": part.get_content_type(), "disposition": "attachment"}
+        for part in msg.iter_attachments()
+    ]
+    if attachments:
+        payload["attachments"] = attachments
+    r = requests.post(CF_SEND.format(cfg.cf_account_id), json=payload,
+                      headers={"Authorization": f"Bearer {cfg.cf_email_token}"}, timeout=120)
+    try:
+        data = r.json()
+    except ValueError:
+        data = {}
+    if r.status_code != 200 or not data.get("success") or (data.get("result") or {}).get("permanent_bounces"):
+        errors = "; ".join(e.get("message", "") for e in data.get("errors") or []) or r.text[:200]
+        raise RuntimeError(f"Cloudflare Email Service refused the mail (HTTP {r.status_code}): {errors}")
 
 
 def _send(cfg: Config, msg: EmailMessage) -> None:
+    if cfg.cf_email_token:
+        _send_cloudflare(cfg, msg)
+        return
     ctx = ssl.create_default_context()
     if cfg.smtp_port == 465:
         with smtplib.SMTP_SSL(cfg.smtp_host, cfg.smtp_port, context=ctx, timeout=120) as s:

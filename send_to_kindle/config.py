@@ -33,6 +33,9 @@ class Config:
     smtp_password: str
     sender: str
     max_mb: int
+    # Cloudflare Email Service's REST API instead of SMTP (optional): the account and a send-only token
+    cf_account_id: str | None
+    cf_email_token: str | None
     # HTTP service
     token: str | None
     listen: str
@@ -56,16 +59,20 @@ class Config:
     @classmethod
     def load(cls, *, need_mail: bool = True, need_token: bool = False) -> "Config":
         mail = _need if need_mail else _get
+        cloudflare = bool(_get("STK_CF_EMAIL_TOKEN"))
+        smtp = _get if cloudflare else mail  # with Cloudflare's API, no SMTP account is needed
         work = Path(_get("STK_WORK_DIR", "/var/lib/send-to-kindle"))
         return cls(
             kindle_email=mail("STK_KINDLE_EMAIL") or "",
             smtp_host=_get("STK_SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(_get("STK_SMTP_PORT", "587")),
-            smtp_user=mail("STK_SMTP_USER") or "",
-            smtp_password=mail("STK_SMTP_PASSWORD") or "",
-            sender=_get("STK_SENDER") or _get("STK_SMTP_USER") or "",
-            # Amazon takes up to 50 MB; Gmail stops at 25 MB per message, attachments included.
+            smtp_user=smtp("STK_SMTP_USER") or "",
+            smtp_password=smtp("STK_SMTP_PASSWORD") or "",
+            sender=(mail("STK_SENDER") if cloudflare else _get("STK_SENDER") or _get("STK_SMTP_USER")) or "",
+            # Amazon takes up to 50 MB; Gmail and Cloudflare stop at 25 MB per message, attachments included.
             max_mb=int(_get("STK_MAX_MB", "24")),
+            cf_account_id=mail("STK_CF_ACCOUNT_ID") if cloudflare else None,
+            cf_email_token=_get("STK_CF_EMAIL_TOKEN"),
             token=_need("STK_TOKEN") if need_token else _get("STK_TOKEN"),
             listen=_get("STK_LISTEN", "127.0.0.1"),
             port=int(_get("STK_PORT", "8735")),

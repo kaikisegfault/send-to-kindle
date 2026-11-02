@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import tempfile
@@ -305,6 +306,43 @@ class Flow(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0]["status"].startswith("failed"))
         self.assertTrue((self.lib.dir / "inbox" / "x.pdf").exists())
+
+
+class CloudflareMail(unittest.TestCase):
+    ENV = {"STK_KINDLE_EMAIL": "reader@kindle.com", "STK_SENDER": "kindle@example.com",
+           "STK_CF_ACCOUNT_ID": "acct", "STK_CF_EMAIL_TOKEN": "tok"}
+
+    def test_send_goes_to_the_rest_api_without_smtp_settings(self):
+        from send_to_kindle import mail
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            cfg = Config.load()
+        reply = mock.Mock(status_code=200)
+        reply.json.return_value = {"success": True, "result": {"delivered": ["reader@kindle.com"], "permanent_bounces": []}}
+        with mock.patch("send_to_kindle.mail.requests.post", return_value=reply) as post, \
+             mock.patch("send_to_kindle.mail.smtplib.SMTP") as smtp, mock.patch("send_to_kindle.mail.smtplib.SMTP_SSL") as ssl_smtp:
+            mail.to_kindle(cfg, b"PK\x03\x04 epub bytes", "book.epub", "A Book")
+        smtp.assert_not_called()
+        ssl_smtp.assert_not_called()
+        url, = post.call_args.args
+        self.assertEqual(url, "https://api.cloudflare.com/client/v4/accounts/acct/email/sending/send")
+        self.assertEqual(post.call_args.kwargs["headers"], {"Authorization": "Bearer tok"})
+        body = post.call_args.kwargs["json"]
+        self.assertEqual((body["from"], body["to"], body["subject"]), ("kindle@example.com", "reader@kindle.com", "A Book"))
+        self.assertEqual(body["text"].strip(), "Personal document: A Book")
+        att, = body["attachments"]
+        self.assertEqual((att["filename"], att["type"], att["disposition"]), ("book.epub", "application/epub+zip", "attachment"))
+        self.assertEqual(base64.b64decode(att["content"]), b"PK\x03\x04 epub bytes")
+
+    def test_a_refusal_raises(self):
+        from send_to_kindle import mail
+        with mock.patch.dict(os.environ, self.ENV, clear=True):
+            cfg = Config.load()
+        reply = mock.Mock(status_code=403, text="")
+        reply.json.return_value = {"success": False, "errors": [{"message": "sender domain not onboarded"}]}
+        with mock.patch("send_to_kindle.mail.requests.post", return_value=reply):
+            with self.assertRaisesRegex(RuntimeError, "not onboarded"):
+                mail.notify(cfg, "kindle@example.com", "s", "t")  # not on the inbox allowlist: nothing sent
+                mail.to_kindle(cfg, b"x", "a.pdf", "A")
 
 
 if __name__ == "__main__":

@@ -113,9 +113,10 @@ All settings are environment variables, in `/etc/send-to-kindle/settings` on a s
 | Name | Needed | What it is |
 |---|---|---|
 | `STK_KINDLE_EMAIL` | yes | Your Kindle's address (`…@kindle.com`) |
-| `STK_SMTP_USER`, `STK_SMTP_PASSWORD` | yes | The sending account and its (app) password |
-| `STK_SENDER` | | From address; defaults to `STK_SMTP_USER`. Must be on Amazon's approved list |
+| `STK_SMTP_USER`, `STK_SMTP_PASSWORD` | yes, without Cloudflare | The sending account and its (app) password |
+| `STK_SENDER` | yes, with Cloudflare | From address; defaults to `STK_SMTP_USER`. Must be on Amazon's approved list |
 | `STK_SMTP_HOST`, `STK_SMTP_PORT` | | Default `smtp.gmail.com`, `587` (465 for implicit TLS) |
+| `STK_CF_ACCOUNT_ID`, `STK_CF_EMAIL_TOKEN` | | Send through Cloudflare Email Service's REST API (HTTPS) instead of SMTP: the account ID and an API token with only *Email Sending: Edit*. For hosts that block outgoing SMTP (Hetzner Cloud blocks ports 25 and 465; Cloudflare's SMTP takes only 465). `STK_SENDER` must be on a domain onboarded for Email Sending; set `STK_MAX_MB=18` (25 MiB per message after base64) |
 | `STK_TOKEN` | yes, to serve | The bearer token every request must carry |
 | `STK_LISTEN`, `STK_PORT` | | Default `127.0.0.1`, `8735` |
 | `STK_WORK_DIR` | | Default `/var/lib/send-to-kindle` |
