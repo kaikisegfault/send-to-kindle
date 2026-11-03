@@ -1,0 +1,11 @@
+# Dependabot keeps the engine's Python packages current: security fixes as soon as an advisory appears
+# (repository setting), plus one grouped update pull request each month.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      all:
+        patterns: ["*"]
