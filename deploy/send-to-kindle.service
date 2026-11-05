@@ -1,6 +1,7 @@
 [Unit]
 Description=send-to-kindle engine
-After=network-online.target
+Requires=send-to-kindle-firewall.service send-to-kindle-convert.socket
+After=network-online.target send-to-kindle-firewall.service send-to-kindle-convert.socket
 Wants=network-online.target
 
 [Service]
@@ -17,11 +18,12 @@ RestartSec=5
 Nice=19
 CPUWeight=10
 IOSchedulingClass=idle
-MemoryHigh=600M
-MemoryMax=900M
+# Files are opened by the converter (send-to-kindle-convert@.service), so the engine itself stays small.
+MemoryHigh=200M
+MemoryMax=300M
 TasksMax=64
 
-# Hardening: it can write only its own state directory.
+# Hardening: it can write only its own state directory (the firewall table narrows its network).
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

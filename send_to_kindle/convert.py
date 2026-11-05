@@ -91,7 +91,8 @@ def prepare(doc: Document, fmt: str | None, title: str | None = None) -> tuple[b
     fmt "original": the file itself, untouched (files in a Kindle format only).
     fmt "epub": converted, then every word of the source looked for in the result. An EPUB asked for
     as "epub" is rebuilt from its text with send-to-kindle's own clean styling.
-    No fmt: files stay as they are, everything else becomes EPUB.
+    No fmt: files stay as they are, everything else becomes EPUB. (The engine decides before calling
+    the converter; this is for the command line and the converter itself.)
     """
     if fmt not in (None, "original", "epub"):
         raise ValueError(f"unknown format {fmt!r}: use original or epub")
@@ -115,10 +116,6 @@ def prepare(doc: Document, fmt: str | None, title: str | None = None) -> tuple[b
         result["ocr"] = f"{doc.meta.get('ocr_languages')}, confidence {doc.meta.get('ocr_confidence')}%"
         if doc.meta.get("ocr_poor"):
             result["ocr_poor"] = doc.meta["ocr_poor"]
-    if doc.meta.get("second_extractor"):
-        result["second_extractor"] = doc.meta["second_extractor"]
-    if doc.meta.get("check_page"):
-        result["check_page"] = doc.meta["check_page"]
     if doc.kind == "pdf":
         result["pages"] = doc.meta.get("pages")
         if doc.meta.get("empty_pages"):

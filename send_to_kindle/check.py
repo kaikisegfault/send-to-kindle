@@ -30,14 +30,6 @@ def compare(source_text: str, epub_plain: str) -> dict:
     }
 
 
-def faithful(source_text: str, written: str) -> dict:
-    """A source reformatted by an assistant (punctuation, capitals, paragraphs): every source word must
-    still be there, and the added words are counted too."""
-    result = compare(source_text, written)
-    src, out = words(source_text), words(written)
-    result["added_words"] = sum(n - src[w] for w, n in out.items() if n > src[w])
-    return result
-
 
 def describe(check: dict) -> str:
     if not check:
@@ -49,10 +41,6 @@ def describe(check: dict) -> str:
         line += f"; text recognised by OCR ({check['ocr']}), which can misread words"
     if check.get("ocr_poor"):
         line += f"; {check['ocr_poor']}"
-    if check.get("added_words"):
-        line += f"; {check['added_words']:,} words added"
-    if check.get("check_page"):
-        line += f"; extractors {check['check_page']}"
     return line
 
 

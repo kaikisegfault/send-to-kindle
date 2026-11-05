@@ -1,4 +1,4 @@
-"""Text out of files and web pages, by programs only: the same input always gives the same text."""
+"""Text out of files, by programs only: the same input always gives the same text. Runs in the converter."""
 
 from __future__ import annotations
 
@@ -189,13 +189,6 @@ def ocr_paragraphs(data: bytes) -> tuple[list[str], dict]:
     return mend_breaks(paragraphs), meta
 
 
-def second_extraction(page: str) -> str:
-    """The article text by a second, independent extractor (Mozilla's Readability), to check the first."""
-    from readability import Document as Readable
-
-    return html_text(Readable(page).summary(html_partial=True))
-
-
 def pdftotext_words(data: bytes) -> int | None:
     """Word count by a second, independent extractor (poppler's pdftotext), to cross-check PyMuPDF."""
     try:
@@ -308,29 +301,3 @@ def text_paragraphs(text: str) -> list[str]:
     blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n"))
     return [p for p in (join_lines(b.splitlines()) for b in blocks) if p]
 
-
-def article(page: str, url: str) -> dict | None:
-    """The article in a web page (no menus, ads or comments), as HTML and as plain text."""
-    import trafilatura
-
-    options = dict(url=url, favor_recall=True, include_comments=False, include_tables=True, include_images=False, include_links=False, deduplicate=False)
-    body = trafilatura.extract(page, output_format="html", include_formatting=True, **options)
-    text = trafilatura.extract(page, output_format="txt", **options)
-    if not body or not text:
-        return None
-    meta = trafilatura.extract_metadata(page, default_url=url)
-    lang = None
-    m = re.search(r"<html[^>]*\blang=[\"']?([a-zA-Z-]{2,10})", page[:5000])
-    if m:
-        lang = m.group(1)
-    # trafilatura wraps the article in <html><body><main>…; pandoc reads the inner markup alone.
-    body = re.sub(r"^.*?<body[^>]*>|</body>.*$", "", body, flags=re.S)
-    return {
-        "title": (meta.title if meta and meta.title else "").strip(),
-        "author": (meta.author if meta and meta.author else "") or "",
-        "site": (meta.sitename if meta and meta.sitename else "") or "",
-        "date": (meta.date if meta and meta.date else "") or "",
-        "body": body,
-        "text": text,
-        "lang": lang,
-    }

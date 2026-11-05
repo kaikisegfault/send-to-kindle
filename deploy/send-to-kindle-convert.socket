@@ -1,0 +1,14 @@
+[Unit]
+Description=send-to-kindle converter socket: each connection starts a fresh converter with no network
+
+[Socket]
+ListenStream=/run/send-to-kindle/convert.sock
+SocketUser=kindle
+SocketGroup=kindle
+SocketMode=0600
+DirectoryMode=0755
+Accept=yes
+MaxConnections=2
+
+[Install]
+WantedBy=sockets.target

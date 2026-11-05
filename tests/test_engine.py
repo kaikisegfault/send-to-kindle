@@ -3,34 +3,19 @@
 from __future__ import annotations
 
 import base64
+import dataclasses
 import os
 import re
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from send_to_kindle import check, convert, extract, jobs, sources, youtube
+from send_to_kindle import check, convert, converter, extract, jobs, sources
 from send_to_kindle.config import Config
 from send_to_kindle.library import Library
 
-VTT = """WEBVTT
-Kind: captions
-Language: en
-
-00:00:00.000 --> 00:00:02.000 align:start position:0%
-so<00:00:00.500><c> today</c><00:00:01.000><c> we</c>
-
-00:00:02.000 --> 00:00:02.010 align:start position:0%
-so today we
-
-00:00:02.010 --> 00:00:04.000 align:start position:0%
-so today we
-talk<00:00:03.000><c> about</c><00:00:03.500><c> books</c>
-
-00:01:05.000 --> 00:01:07.000
-and &amp; that's all
-"""
 
 
 def make_pdf(pages: list[str]) -> bytes:
@@ -58,27 +43,11 @@ class Text(unittest.TestCase):
     def test_join_lines_rejoins_broken_words(self):
         self.assertEqual(extract.join_lines(["an exam-", "ple of well-", "Known"]), "an example of well- Known")
 
-    def test_vtt_folds_rolling_captions(self):
-        paras = youtube.vtt_paragraphs(VTT)
-        self.assertEqual(paras, ["so today we talk about books", "and & that's all"])
-
     def test_compare_counts_missing_words(self):
         r = check.compare("one two three three", "one three title page")
         self.assertEqual(r["source_words"], 4)
         self.assertEqual(r["kept_words"], 2)
         self.assertEqual(set(r["missing"]), {"two", "three"})
-
-    def test_pick_track_prefers_human_captions_in_the_videos_language(self):
-        info = {"language": "ru", "subtitles": {"ru": [{"ext": "vtt", "url": "m"}]},
-                "automatic_captions": {"ru-orig": [{"ext": "vtt", "url": "a"}], "en": [{"ext": "vtt", "url": "t"}]}}
-        self.assertEqual(youtube.pick_track(info)[0], "ru")
-        info["subtitles"] = {}
-        self.assertEqual(youtube.pick_track(info)[0], "ru-orig")
-
-    def test_video_ids(self):
-        self.assertEqual(youtube.video_id("https://youtu.be/abc123XYZ"), "abc123XYZ")
-        self.assertEqual(youtube.video_id("https://www.youtube.com/watch?v=abc123XYZ&t=4"), "abc123XYZ")
-        self.assertEqual(youtube.video_id("https://www.youtube.com/shorts/abc123XYZ"), "abc123XYZ")
 
 
 class Pdf(unittest.TestCase):
@@ -175,31 +144,6 @@ class Styling(unittest.TestCase):
         self.assertEqual(chk["kept_pct"], 100.0)
 
 
-class Article(unittest.TestCase):
-    def test_article_text_survives(self):
-        paras = "".join(f"<p>Paragraph {i} says something about reading on a Kindle in bed, sentence number {i}.</p>" for i in range(12))
-        page = f"<html lang='en'><head><title>Reading</title></head><body><nav>Home About Login</nav><article><h1>On reading</h1>{paras}</article><footer>Copyright</footer></body></html>"
-        doc = sources.from_bytes(page.encode(), name="page.html", origin="https://example.com/a", content_type="text/html")
-        self.assertEqual(doc.kind, "article")
-        epub, ext, chk = convert.prepare(doc, None)
-        self.assertEqual(ext, "epub")
-        self.assertGreaterEqual(chk["kept_pct"], 99.0, chk)
-        self.assertNotIn("Login", extract.epub_text(epub))
-
-
-class Extractions(unittest.TestCase):
-    def test_agree_superset_disagree(self):
-        base = " ".join(f"w{i}" for i in range(500))
-        self.assertFalse(sources.compare_extractions(base, base)["use_second"])
-        fuller = base + " " + " ".join(f"extra{i}" for i in range(200))
-        v = sources.compare_extractions(base, fuller)
-        self.assertTrue(v["use_second"])
-        other = " ".join(f"z{i}" for i in range(400))
-        v = sources.compare_extractions(base, other)
-        self.assertTrue(v["flag"])
-        self.assertFalse(v["use_second"])
-
-
 class Ocr(unittest.TestCase):
     def test_scanned_pdf_is_read_by_ocr(self):
         import shutil
@@ -222,29 +166,30 @@ class Ocr(unittest.TestCase):
 
 
 class Flow(unittest.TestCase):
+    """Requests against a library on disk; mail is captured, not sent."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.cfg = cfg(self.tmp.name)
         self.lib = Library(self.cfg)
         (self.lib.dir / "inbox").mkdir(parents=True)
         self.sent = []
-        patcher = mock.patch("send_to_kindle.mail.to_kindle", side_effect=lambda c, d, f, t: self.sent.append((f, len(d))) or "<id>")
+        patcher = mock.patch("send_to_kindle.mail.to_kindle", side_effect=lambda c, d, f, t: self.sent.append((f, d)) or "<id>")
         patcher.start()
         self.addCleanup(patcher.stop)
         self.addCleanup(self.tmp.cleanup)
 
-    def test_inbox_pdf_sent_unchanged_is_stored_once(self):
+    def test_inbox_pdf_sent_as_is_is_stored_once_and_never_opened(self):
         (self.lib.dir / "inbox" / "report.pdf").write_bytes(make_pdf(["quarterly report"]))
-        res = jobs.send(self.cfg, {"source": {"path": "inbox/report.pdf"}})
+        with mock.patch("send_to_kindle.converter.build", side_effect=AssertionError("opened")):
+            res = jobs.send(self.cfg, {"source": {"path": "inbox/report.pdf"}})
         rows = self.lib.rows()
         self.assertEqual([r["id"] for r in rows], ["1", "2"])
         self.assertEqual(rows[0]["folder"], "user-provided")
-        self.assertTrue(rows[0]["file"].endswith(".md"))
-        self.assertIn("as item 2", self.lib.path(rows[0]).read_text())
+        self.assertIn("as item 2", (self.lib.dir / rows[0]["file"]).read_text())
         self.assertEqual(rows[1]["file"], "sent/0002-report.pdf")
-        self.assertEqual(rows[1]["from"], "1")
+        self.assertEqual((rows[1]["from"], rows[1]["mode"]), ("1", "as is"))
         self.assertFalse((self.lib.dir / "inbox" / "report.pdf").exists())
-        self.assertTrue(self.lib.path(rows[1]).read_bytes().startswith(b"%PDF"))
         self.assertEqual(res["id"], 2)
 
     def test_converted_inbox_pdf_keeps_the_original(self):
@@ -255,36 +200,44 @@ class Flow(unittest.TestCase):
         self.assertEqual(rows[1]["file"], "sent/0002-book.epub")
         self.assertEqual(res["check"]["kept_pct"], 100.0)
 
-    def test_read_then_written_content(self):
-        (self.lib.dir / "inbox" / "notes.md").write_text("# Notes\n\nSome **long** text to brief.\n")
-        r = jobs.read(self.cfg, {"source": {"path": "inbox/notes.md"}})
-        self.assertEqual(r["id"], 1)
-        self.assertIn("long", r["text"])
-        res = jobs.send(self.cfg, {"content": "# Brief\n\n- one point", "title": "Brief", "instructions": "ultra brief", "from": [r["id"]]})
+    def test_text_from_a_chat_goes_as_epub(self):
+        res = jobs.send(self.cfg, {"content": "# Brief\n\n- one point\n- another", "title": "Brief"})
         rows = self.lib.rows()
-        self.assertEqual(rows[1]["mode"], "instructions")
-        self.assertEqual(rows[1]["from"], "1")
-        self.assertEqual(rows[1]["instructions"], "ultra brief")
-        self.assertEqual(res["id"], 2)
-
-    def test_formatted_one_to_one_is_checked_word_by_word(self):
-        (self.lib.dir / "inbox" / "talk.md").write_text("# Talk\n\nso today we talk about books and how we read them\n")
-        r = jobs.read(self.cfg, {"source": {"path": "inbox/talk.md"}})
-        good = "# Talk\n\nSo today we talk about books, and how we read them."
-        res = jobs.send(self.cfg, {"content": good, "title": "Talk", "faithful": True, "from": [r["id"]]})
-        self.assertEqual(res["mode"], "1:1 formatted")
+        self.assertEqual(rows[0]["file"], "user-provided/0001-brief.md")
+        self.assertEqual((rows[1]["file"], rows[1]["source"]), ("sent/0002-brief.epub", "written in a chat"))
         self.assertEqual(res["check"]["kept_pct"], 100.0)
-        dropped = "# Talk\n\nSo today we talk."
         with self.assertRaises(ValueError):
-            jobs.send(self.cfg, {"content": dropped, "title": "Talk", "faithful": True, "from": [r["id"]]})
+            jobs.send(self.cfg, {"content": "x", "format": "original"})
 
-    def test_read_in_parts_extracts_once(self):
-        (self.lib.dir / "inbox" / "long.md").write_text("# Long\n\n" + "word " * 30000)
-        first = jobs.read(self.cfg, {"source": {"path": "inbox/long.md"}, "limit": 60000})
-        self.assertIsNotNone(first["next_offset"])
-        with mock.patch("send_to_kindle.jobs._load", side_effect=AssertionError("extracted again")):
-            second = jobs.read(self.cfg, {"source": {"id": first["id"]}, "offset": first["next_offset"]})
-        self.assertEqual(second["id"], first["id"])
+    def test_markdown_file_takes_its_heading_as_title(self):
+        (self.lib.dir / "inbox" / "t.md").write_text("# A Talk\n\nso today we talk about books\n")
+        res = jobs.send(self.cfg, {"source": {"path": "inbox/t.md"}})
+        self.assertEqual((res["title"], res["format"]), ("A Talk", "epub"))
+
+    def test_links_must_be_public_files(self):
+        for url in ["http://127.0.0.1:5232/", "http://localhost/x.pdf", "http://169.254.169.254/latest", "http://10.1.2.3/a.pdf", "file:///etc/passwd"]:
+            with self.assertRaises(ValueError, msg=url):
+                sources.download(url, self.cfg)
+        page = (b"<!doctype html><html><body>a page</body></html>", "text/html", "index.html")
+        with mock.patch("send_to_kindle.sources.download", return_value=page):
+            with self.assertRaisesRegex(ValueError, "web page"):
+                jobs.send(self.cfg, {"source": {"url": "https://example.com/"}})
+
+    def test_upload_address_works_once_and_expires(self):
+        self.cfg = dataclasses.replace(self.cfg, public_url="https://kindle.example.com")
+        slot = jobs.upload_slot(self.cfg, {"format": "original", "title": "Made in a chat"})
+        token = slot["url"].rstrip("/").rsplit("/", 1)[-1]
+        self.assertTrue(slot["url"].startswith("https://kindle.example.com/upload/"))
+        res = jobs.upload(self.cfg, jobs.claim_upload(self.cfg, token), "styled.pdf", make_pdf(["styled"]))
+        self.assertEqual((res["title"], res["format"], res["mode"]), ("Made in a chat", "pdf", "as is"))
+        with self.assertRaises(PermissionError):
+            jobs.claim_upload(self.cfg, token)
+        late = jobs.upload_slot(self.cfg, {})["url"].rstrip("/").rsplit("/", 1)[-1]
+        with mock.patch("send_to_kindle.jobs.time.time", return_value=time.time() + 601):
+            with self.assertRaises(PermissionError):
+                jobs.claim_upload(self.cfg, late)
+        with self.assertRaises(PermissionError):
+            jobs.claim_upload(self.cfg, "../../etc/passwd")
 
     def test_remove_keeps_ids_unique(self):
         (self.lib.dir / "inbox" / "a.pdf").write_bytes(make_pdf(["a"]))
@@ -292,14 +245,14 @@ class Flow(unittest.TestCase):
         jobs.remove(self.cfg, {"ids": [1, 2], "reason": "test"})
         rows = self.lib.rows()
         self.assertTrue(all(r["status"] == "removed: test" for r in rows))
-        self.assertFalse(self.lib.path(rows[1]).exists())
+        self.assertFalse((self.lib.dir / rows[1]["file"]).exists())
         self.assertEqual(self.lib.next_id(), 3)
         with self.assertRaises(ValueError):
             jobs.send(self.cfg, {"source": {"id": 2}})
 
     def test_failed_send_moves_nothing(self):
         (self.lib.dir / "inbox" / "x.pdf").write_bytes(make_pdf(["x"]))
-        with mock.patch("send_to_kindle.mail.to_kindle", side_effect=RuntimeError("smtp down")):
+        with mock.patch("send_to_kindle.mail.to_kindle", side_effect=RuntimeError("mail down")):
             with self.assertRaises(RuntimeError):
                 jobs.send(self.cfg, {"source": {"path": "inbox/x.pdf"}})
         rows = self.lib.rows()
@@ -307,6 +260,84 @@ class Flow(unittest.TestCase):
         self.assertTrue(rows[0]["status"].startswith("failed"))
         self.assertTrue((self.lib.dir / "inbox" / "x.pdf").exists())
 
+    def test_mail_in_takes_files_not_links(self):
+        from email.message import EmailMessage
+        from send_to_kindle import inbound
+
+        self.cfg = dataclasses.replace(self.cfg, inbox_senders=["me@example.com"])
+        msg = EmailMessage()
+        msg["From"], msg["To"], msg["Subject"] = "me@example.com", "kindle@example.com", "read this"
+        msg.set_content("and this page: https://example.com/article")
+        msg.add_attachment(make_pdf(["mailed"]), maintype="application", subtype="pdf", filename="mailed.pdf")
+        with mock.patch("send_to_kindle.inbound._dkim_ok", return_value=True), mock.patch("send_to_kindle.mail.notify"):
+            r = inbound.handle(self.cfg, msg.as_bytes())
+        self.assertTrue(r["results"][0].startswith("sent 2: mailed"), r)
+        self.assertIn("not taken", r["results"][1])
+
+
+class Converter(unittest.TestCase):
+    """The converter as systemd runs it: a fresh process per connection, the socket as its stdin/stdout."""
+
+    def test_conversion_through_the_socket(self):
+        import socket
+        import subprocess
+        import sys
+        import threading
+
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, "convert.sock")
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(path)
+        server.listen(2)
+
+        def accept(n):
+            for _ in range(n):
+                conn, _ = server.accept()
+                subprocess.run([sys.executable, "-m", "send_to_kindle", "convert-stdio"], stdin=conn, stdout=conn,
+                               cwd=Path(__file__).resolve().parents[1], timeout=120)
+                conn.close()
+
+        threading.Thread(target=accept, args=(2,), daemon=True).start()
+        c = dataclasses.replace(cfg(tmp), converter=path)
+        epub, title, chk = converter.to_epub(c, "file", "Book.pdf", make_pdf(["Chapter one. " + "word " * 100]), None)
+        self.assertTrue(epub.startswith(b"PK"))
+        self.assertEqual((title, chk["kept_pct"]), ("Book", 100.0))
+        with self.assertRaisesRegex(ValueError, "can't be converted"):
+            converter.to_epub(c, "file", "photo.png", b"\x89PNG\r\n\x1a\n" + b"0" * 100, None)
+        server.close()
+
+
+class GitLibrary(unittest.TestCase):
+    """A library in a repository: a fresh copy for each job, nothing left on disk, files at the root."""
+
+    def test_job_pushes_and_leaves_nothing(self):
+        import subprocess
+
+        tmp = tempfile.mkdtemp()
+        bare, seed = os.path.join(tmp, "lib.git"), os.path.join(tmp, "seed")
+        run = lambda *a, cwd=None: subprocess.run(a, cwd=cwd, check=True, capture_output=True)
+        run("git", "init", "--bare", "-q", "-b", "main", bare)
+        run("git", "-C", bare, "config", "uploadpack.allowFilter", "true")
+        run("git", "init", "-q", "-b", "main", seed)
+        os.makedirs(os.path.join(seed, "inbox"))
+        Path(seed, "inbox", "report.pdf").write_bytes(make_pdf(["quarterly"]))
+        Path(seed, "LEDGER.csv").write_text(",".join(["id", "date", "folder", "file", "mode", "format", "source", "from", "check", "status", "instructions"]) + "\n")
+        for a in (("add", "-A"), ("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "seed"), ("push", "-q", bare, "main")):
+            run("git", *a, cwd=seed)
+        work = os.path.join(tmp, "work")
+        env = {"STK_WORK_DIR": work, "STK_LIBRARY_REPO": f"file://{bare}", "STK_KINDLE_EMAIL": "k@example.com",
+               "STK_SMTP_USER": "me@example.com", "STK_SMTP_PASSWORD": "x"}
+        with mock.patch.dict(os.environ, env):
+            c = Config.load()
+        with mock.patch("send_to_kindle.mail.to_kindle", return_value="<id>"):
+            res = jobs.send(c, {"source": {"path": "inbox/report.pdf"}})
+        self.assertEqual(res["file"], "sent/0002-report.pdf")
+        self.assertEqual([p for p in os.listdir(work) if p.startswith("library-")], [])
+        files = run("git", "-C", bare, "ls-tree", "-r", "--name-only", "main").stdout.decode().split()
+        self.assertIn("sent/0002-report.pdf", files)
+        self.assertIn("user-provided/0001-report.md", files)
+        self.assertNotIn("inbox/report.pdf", files)
+        self.assertEqual(jobs.status(c, 2)["file"], "sent/0002-report.pdf")
 
 class CloudflareMail(unittest.TestCase):
     ENV = {"STK_KINDLE_EMAIL": "reader@kindle.com", "STK_SENDER": "kindle@example.com",

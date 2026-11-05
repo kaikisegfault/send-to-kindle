@@ -42,7 +42,7 @@ class Config:
     port: int
     # Working files
     work_dir: Path
-    # Library (optional): a folder in a git repository that keeps everything provided and sent
+    # Library (optional): a git repository (its root, or a folder of it) that keeps everything provided and sent
     library_repo: str | None
     library_branch: str
     library_folder: str
@@ -50,9 +50,11 @@ class Config:
     git_name: str
     git_email: str
     git_ssh_key: str | None
-    # YouTube
-    youtube_proxy: str | None
-    youtube_warp: bool
+    # One-time upload addresses (POST /upload-slot) are made on this public base, e.g. https://kindle.example.com
+    public_url: str | None
+    # Files are opened by the converter: a separate process with no network, reached on this Unix socket.
+    # Empty: converted in this process (tests, the command line).
+    converter: str | None
     # Email inbox (optional)
     inbox_senders: list[str]
 
@@ -79,12 +81,12 @@ class Config:
             work_dir=work,
             library_repo=_get("STK_LIBRARY_REPO"),
             library_branch=_get("STK_LIBRARY_BRANCH", "main"),
-            library_folder=_get("STK_LIBRARY_FOLDER", "kindle-content").strip("/"),
+            library_folder=(_get("STK_LIBRARY_FOLDER", "") or "").strip("/"),
             library_checkout=Path(_get("STK_LIBRARY_CHECKOUT", str(work / "library"))),
             git_name=_get("STK_GIT_NAME", "send-to-kindle"),
             git_email=_get("STK_GIT_EMAIL", "send-to-kindle@localhost"),
             git_ssh_key=_get("STK_GIT_SSH_KEY"),
-            youtube_proxy=_get("STK_YOUTUBE_PROXY"),
-            youtube_warp=(_get("STK_YOUTUBE_WARP", "no") or "no").lower() in ("1", "yes", "true"),
+            public_url=(_get("STK_PUBLIC_URL") or "").rstrip("/") or None,
+            converter=_get("STK_CONVERTER"),
             inbox_senders=_list("STK_INBOX_SENDERS"),
         )

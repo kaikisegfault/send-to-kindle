@@ -1,16 +1,16 @@
 """The HTTP service: a small JSON API behind a bearer token, for a connector, a script or the email inbox.
 
-    POST /send     {"source": {...}, "format": "original"|"epub", "title": "..."}   1:1
-                   {"content": "markdown", "title": "...", "instructions": "...", "from": [ids]}   written content
-                   {"content": "markdown", "faithful": true, "from": [id]}   a source reformatted, checked word by word
-    POST /read     {"source": {...}, "offset": 0}        the source's full text, in parts (OCR for scans)
-    POST /remove   {"ids": [ids], "reason": "..."}       delete items' files; their rows stay, marked removed
+    POST /send         {"source": {...}, "format": "original"|"epub", "title": "..."}   a file, as it is or converted
+                       {"content": "markdown", "title": "..."}   text (written or read in a chat) as EPUB
+    POST /upload-slot  {"format": "original"|"epub", "title": "..."}   a one-time upload address (10 minutes)
+    PUT  /upload/<token>/<file name>   the file itself, no bearer token: the address is the credential
+    POST /remove       {"ids": [ids], "reason": "..."}   delete items' files; their rows stay, marked removed
     GET  /inbox                                          files waiting in the library's inbox/
     GET  /item/<id>                                      one ledger row, as "item"
-    POST /inbound  raw email (message/rfc822)            the email inbox; answers at once, works after
+    POST /inbound      raw email (message/rfc822)        the email inbox; answers at once, works after
     GET  /health
 
-A source is {"url": "..."}, {"path": "inbox/file.pdf"}, {"id": 12} or {"text": "...", "title": "..."}.
+A source is {"url": "..."} (a file link), {"path": "inbox/file.pdf"} or {"id": 12} (a library item).
 Long jobs answer within ~50 s; if one takes longer the reply says it is still working, the ledger shows
 the result when it is done, and a short mail tells the sender address how it ended.
 """
@@ -23,6 +23,7 @@ import logging
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import unquote
 
 from . import inbound, jobs
 from .config import Config
@@ -130,12 +131,30 @@ def make_handler(cfg: Config):
                 return self._reply(400, {"status": "error", "error": "body is not JSON"})
             if self.path == "/send":
                 result = run_with_deadline(cfg, "send", jobs.send, cfg, req)
-            elif self.path == "/read":
-                result = run_with_deadline(cfg, "read", jobs.read, cfg, req)
+            elif self.path == "/upload-slot":
+                try:
+                    return self._reply(200, {"status": "ok", **jobs.upload_slot(cfg, req)})
+                except Exception as e:  # noqa: BLE001
+                    return self._reply(400, {"status": "error", "error": str(e)})
             elif self.path == "/remove":
                 result = run_with_deadline(cfg, "remove", jobs.remove, cfg, req)
             else:
                 return self._reply(404, {"status": "error", "error": "not found"})
+            return self._reply(200 if result["status"] != "error" else 422, result)
+
+        def do_PUT(self):
+            parts = self.path.split("?", 1)[0].split("/")
+            if len(parts) != 4 or parts[1] != "upload" or not parts[3]:
+                return self._reply(404, {"status": "error", "error": "not found"})
+            try:
+                slot = jobs.claim_upload(cfg, parts[2])
+            except PermissionError as e:
+                return self._reply(403, {"status": "error", "error": str(e)})
+            try:
+                data = self._body()
+            except ValueError as e:
+                return self._reply(413, {"status": "error", "error": str(e)})
+            result = run_with_deadline(cfg, "upload", jobs.upload, cfg, slot, unquote(parts[3]), data)
             return self._reply(200 if result["status"] != "error" else 422, result)
 
         @staticmethod

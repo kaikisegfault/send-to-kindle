@@ -1,0 +1,23 @@
+#!/usr/sbin/nft -f
+# What the engine's user (kindle) may connect to: the public internet (GitHub for the library, Cloudflare's
+# API for mail, the file links it is given) and local DNS. Nothing else on this server and no private
+# address, so no link can reach inside. Loaded by send-to-kindle-firewall.service before the engine starts.
+# Replies on connections made to the engine (state established) always pass.
+
+table inet send_to_kindle {}
+delete table inet send_to_kindle
+
+table inet send_to_kindle {
+	chain output {
+		type filter hook output priority filter; policy accept;
+		meta skuid "kindle" jump engine
+	}
+
+	chain engine {
+		ct state established,related accept
+		ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } counter drop
+		ip6 daddr { ::/127, fc00::/7, fe80::/10, ff00::/8 } counter drop
+		accept
+	}
+}

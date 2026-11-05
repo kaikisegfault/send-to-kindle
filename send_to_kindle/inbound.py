@@ -1,4 +1,4 @@
-"""The email inbox: mail a file or a link to your inbox address and it goes to the Kindle 1:1.
+"""The email inbox: mail a file to your inbox address and it goes to the Kindle (links are not taken).
 
 A Cloudflare Email Worker passes each message on unchanged (see inbox-worker/). A message is taken only
 when its From address is on STK_INBOX_SENDERS and it carries a valid DKIM signature from that address's
@@ -15,13 +15,13 @@ from email.parser import BytesParser
 from email.utils import parseaddr
 from urllib.parse import urlparse
 
-from . import jobs, mail
+from . import jobs, mail, sources
 from .config import Config
-from .document import KINDLE_FORMATS, slug
+from .document import slug
 from .library import Library
 
 LINK = re.compile(r"https?://[^\s<>\")\]]+")
-# Links that mail providers put in their own footers, not something to read.
+# Links that mail providers put in their own footers: not counted as links the sender meant.
 FOOTER_HOSTS = ("proton.me", "pm.me", "protonmail.com", "google.com", "gmail.com", "accounts.google.com")
 
 
@@ -76,6 +76,19 @@ def _keep_refused(cfg: Config, raw: bytes) -> None:
         old.unlink(missing_ok=True)
 
 
+def _store(lib: Library, name: str, data: bytes) -> str:
+    """A file into inbox/ under a free name; returns the name."""
+    box = lib.dir / "inbox"
+    box.mkdir(parents=True, exist_ok=True)
+    stem, _, ext = name.rpartition(".")
+    stem, ext = slug(stem or name), (ext.lower() if stem else "") or "bin"
+    target, n = box / f"{stem}.{ext}", 2
+    while target.exists():
+        target, n = box / f"{stem}-{n}.{ext}", n + 1
+    target.write_bytes(data)
+    return target.name
+
+
 def handle(cfg: Config, raw: bytes) -> dict:
     msg = BytesParser(policy=policy.default).parsebytes(raw)
     sender = parseaddr(str(msg.get("From", "")))[1].lower()
@@ -86,61 +99,30 @@ def handle(cfg: Config, raw: bytes) -> dict:
         return {"taken": False, "reason": f"no valid DKIM signature from {sender.split('@')[-1]}"}
     subject = str(msg.get("Subject", "")).strip()
     files, links = _parts(msg)
-    to_inbox = subject.lower().startswith("inbox")
     results: list[str] = []
 
-    if to_inbox:
-        with jobs.LOCK:
-            lib = Library(cfg)
-            lib.sync()
-            box = lib.dir / "inbox"
-            box.mkdir(parents=True, exist_ok=True)
+    if subject.lower().startswith("inbox"):
+        with jobs.LOCK, Library(cfg) as lib:
             for name, data in files:
-                stem, _, ext = name.rpartition(".")
-                target = box / f"{slug(stem or name)}.{ext.lower() or 'bin'}"
-                n = 2
-                while target.exists():
-                    target = box / f"{slug(stem or name)}-{n}.{ext.lower() or 'bin'}"
-                    n += 1
-                target.write_bytes(data)
-                results.append(f"inbox: {target.name}")
-            if links:
-                listing = "\n".join(f"- {u}" for u in links)
-                (box / f"links-{slug(subject[5:].strip() or 'from-mail')}.md").write_text(f"# Links from mail\n\n{listing}\n", encoding="utf-8")
-                results.append(f"inbox: {len(links)} link(s) in a note")
-            lib.commit(f"kindle: inbox from mail ({len(files)} files, {len(links)} links)")
+                results.append(f"inbox: {_store(lib, name, data)}")
+            lib.commit(f"kindle: inbox from mail ({len(files)} files)")
     else:
         for name, data in files:
-            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
             try:
-                res = _send_file(cfg, name, data, ext)
+                src = jobs.Source(data, name, sources.kind_of(data, name), f"mail from {sender}")
+                res = jobs._deliver(cfg, src, jobs._wants_epub(None, src), None)
                 results.append(f"sent {res['id']}: {res['title']} ({res['format']}{', ' + res['check_text'] if res['check_text'] else ''})")
             except Exception as e:
-                results.append(f"failed: {name}: {e}")
-        for url in links:
-            try:
-                res = jobs.send(cfg, {"source": {"url": url}})
-                results.append(f"sent {res['id']}: {res['title']} ({res['format']}{', ' + res['check_text'] if res['check_text'] else ''})")
-            except Exception as e:
-                results.append(f"failed: {url}: {e}")
+                with jobs.LOCK, Library(cfg) as lib:  # not lost: kept in the inbox
+                    kept = _store(lib, name, data)
+                    lib.commit(f"kindle: inbox from mail (a send that failed: {kept})")
+                results.append(f"failed: {name}: {e} (kept as inbox/{kept})")
+    if links:
+        results.append(f"{len(links)} link(s) not taken: this address takes files only. Ask Claude to read a page and send it.")
     if not results:
-        results.append("nothing to send: no attachments and no links")
+        results.append("nothing to send: no attachments")
     try:
         mail.notify(cfg, sender, f"Kindle: {subject or 'your mail'}", "\n".join(results))
     except Exception:
         pass
     return {"taken": True, "results": results}
-
-
-def _send_file(cfg: Config, name: str, data: bytes, ext: str) -> dict:
-    """An attachment: into the inbox first, then sent from there (1:1, as it is when Kindle takes it)."""
-    with jobs.LOCK:
-        lib = Library(cfg)
-        lib.sync()
-        box = lib.dir / "inbox"
-        box.mkdir(parents=True, exist_ok=True)
-        stem = name.rsplit(".", 1)[0] if "." in name else name
-        target = box / f"mail-{slug(stem)}.{ext or 'bin'}"
-        target.write_bytes(data)
-    fmt = None if ext in KINDLE_FORMATS else "epub"
-    return jobs.send(cfg, {"source": {"path": f"inbox/{target.name}"}, "format": fmt, "title": stem})

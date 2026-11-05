@@ -1,0 +1,48 @@
+[Unit]
+Description=send-to-kindle converter: one file into an EPUB, with no network
+# Every file the engine is given is opened here, never in the engine: a fresh process for each job, its own
+# throwaway user, no network at all, nothing it can write but its private /tmp. It gets the file on the
+# socket and answers on it (send_to_kindle/converter.py).
+
+[Service]
+DynamicUser=yes
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+Environment=PYTHONPATH=/opt/send-to-kindle PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+ExecStart=/opt/send-to-kindle/.venv/bin/python -m send_to_kindle convert-stdio
+RuntimeMaxSec=1800
+
+# Everything else on the server comes first.
+Nice=19
+CPUWeight=10
+IOSchedulingClass=idle
+MemoryHigh=500M
+MemoryMax=700M
+TasksMax=16
+UMask=0077
+
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources

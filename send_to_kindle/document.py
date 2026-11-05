@@ -14,10 +14,10 @@ KINDLE_FORMATS = {"pdf", "epub", "doc", "docx", "txt", "rtf", "htm", "html", "pn
 class Document:
     """A source, fetched and understood.
 
-    kind: pdf | epub | docx | file (another Kindle format) | article | youtube | text | markdown
+    kind: pdf | epub | docx | html | file (another Kindle format) | text | markdown
     data: the file itself, for kinds that are files.
-    body: the readable content as HTML (article, youtube, text) or Markdown (markdown), for EPUB.
-    text: the plain text a reader gets: what Claude reads and what the completeness check counts.
+    body: the readable content as HTML (pdf, html, text) or Markdown (markdown), for EPUB.
+    text: the plain text a reader gets: what the completeness check counts.
     """
 
     kind: str
