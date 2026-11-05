@@ -2,8 +2,10 @@
 
 A Cloudflare Email Worker passes each message on unchanged (see inbox-worker/). A message is taken only
 when its From address is on STK_INBOX_SENDERS and it carries a valid DKIM signature from that address's
-own domain, so nobody can send in your name. Subject "inbox": the files only go to the library's inbox/,
-for a later request.
+own domain, so nobody can send in your name. The subject decides:
+    "convert" in it   every file converted to EPUB (still every word, checked)
+    starts "inbox"    the files only go to the library's inbox/, for a later request
+    anything else     files Kindle takes go as they are; others become EPUB
 """
 
 from __future__ import annotations
@@ -101,7 +103,8 @@ def handle(cfg: Config, raw: bytes) -> dict:
     files, links = _parts(msg)
     results: list[str] = []
 
-    if subject.lower().startswith("inbox"):
+    convert = bool(re.search(r"\bconvert\b", subject, re.IGNORECASE))
+    if subject.lower().startswith("inbox") and not convert:
         with jobs.LOCK, Library(cfg) as lib:
             for name, data in files:
                 results.append(f"inbox: {_store(lib, name, data)}")
@@ -110,7 +113,7 @@ def handle(cfg: Config, raw: bytes) -> dict:
         for name, data in files:
             try:
                 src = jobs.Source(data, name, sources.kind_of(data, name), f"mail from {sender}")
-                res = jobs._deliver(cfg, src, jobs._wants_epub(None, src), None)
+                res = jobs._deliver(cfg, src, jobs._wants_epub("epub" if convert else None, src), None)
                 results.append(f"sent {res['id']}: {res['title']} ({res['format']}{', ' + res['check_text'] if res['check_text'] else ''})")
             except Exception as e:
                 with jobs.LOCK, Library(cfg) as lib:  # not lost: kept in the inbox

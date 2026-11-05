@@ -162,8 +162,9 @@ says how it ended.
 ## Email inbox
 
 Mail files to your inbox address and they go to the Kindle: files Kindle takes as they are, others as
-EPUB. A subject starting with "inbox" only stores them in `inbox/`. Links in a mail are not taken. The
-sender gets a short reply.
+EPUB. The word "convert" in the subject converts every file to EPUB (every word kept and checked); a
+subject starting with "inbox" only stores them in `inbox/`. Links in a mail are not taken. The sender gets
+a short reply.
 
 ## Command line
 

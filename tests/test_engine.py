@@ -268,8 +268,12 @@ class Flow(unittest.TestCase):
         msg.add_attachment(make_pdf(["mailed"]), maintype="application", subtype="pdf", filename="mailed.pdf")
         with mock.patch("send_to_kindle.inbound._dkim_ok", return_value=True), mock.patch("send_to_kindle.mail.notify"):
             r = inbound.handle(self.cfg, msg.as_bytes())
-        self.assertTrue(r["results"][0].startswith("sent 2: mailed"), r)
+        self.assertTrue(r["results"][0].startswith("sent 2: mailed (pdf"), r)
         self.assertIn("not taken", r["results"][1])
+        msg.replace_header("Subject", "Convert please")
+        with mock.patch("send_to_kindle.inbound._dkim_ok", return_value=True), mock.patch("send_to_kindle.mail.notify"):
+            r = inbound.handle(self.cfg, msg.as_bytes())
+        self.assertTrue(r["results"][0].startswith("sent 4: mailed (epub"), r)
 
 
 class Egress(unittest.TestCase):

@@ -20,6 +20,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import re
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -80,8 +81,8 @@ def make_handler(cfg: Config):
     class Handler(BaseHTTPRequestHandler):
         server_version = "send-to-kindle"
 
-        def log_message(self, fmt, *args):
-            log.info("%s %s", self.command, self.path.split("?")[0])
+        def log_message(self, fmt, *args):  # an upload address is a credential: never in the log
+            log.info("%s %s", self.command, re.sub(r"^/upload/[^/]+", "/upload/<address>", self.path.split("?")[0]))
 
         def _reply(self, code: int, body: dict) -> None:
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
