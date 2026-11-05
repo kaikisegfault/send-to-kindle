@@ -1,7 +1,7 @@
 #!/usr/sbin/nft -f
-# Where the engine's user (kindle) may connect: the library's git host and the mail service, by the address
-# lists their providers publish (addresses.nft, refreshed daily by send-to-kindle-addresses.timer), and local
-# DNS. Nothing else: no other website, nothing on this server, no private address. The engine takes no links.
+# Where the engine's user (kindle) may connect: the library's git host and the mail service (addresses.nft,
+# refreshed hourly by send-to-kindle-addresses.timer), and local DNS. Nothing else: no other website, nothing
+# on this server, no private address. The engine takes no links.
 # Loaded by send-to-kindle-firewall.service before the engine starts; replies on connections made to the
 # engine (state established) always pass.
 

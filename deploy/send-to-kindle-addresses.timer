@@ -1,9 +1,9 @@
 [Unit]
-Description=send-to-kindle: refresh the engine's allowed addresses daily
+Description=send-to-kindle: refresh the engine's allowed addresses hourly
 
 [Timer]
-OnCalendar=daily
-RandomizedDelaySec=1h
+OnCalendar=hourly
+RandomizedDelaySec=5min
 Persistent=true
 
 [Install]

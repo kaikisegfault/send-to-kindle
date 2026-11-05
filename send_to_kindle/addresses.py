@@ -1,9 +1,10 @@
-"""Where the engine may connect, for its firewall table: the library's git host and the mail service, by
-the address lists their providers publish. Run as root, daily (send-to-kindle-addresses.timer) and by the
-installer:  python3 -m send_to_kindle.addresses
+"""Where the engine may connect, for its firewall table: the library's git host and the mail service.
+Run as root, hourly (send-to-kindle-addresses.timer) and by the installer:  python3 -m send_to_kindle.addresses
 
-- GitHub (the library over SSH, port 22): api.github.com/meta, its "git" list.
-- Cloudflare (mail through the Email Sending API, port 443): cloudflare.com/ips-v4 and ips-v6.
+- GitHub (the library over SSH, port 22): the "git" list GitHub publishes at api.github.com/meta (those
+  addresses serve GitHub's git and nothing else).
+- Cloudflare's Email Sending API (port 443): the addresses of api.cloudflare.com itself, not Cloudflare's
+  whole network, which also serves countless websites.
 - Another git host or an SMTP server: its current DNS addresses.
 
 The sets go to /etc/send-to-kindle/addresses.nft, which egress.nft includes. If a list can't be fetched,
@@ -34,7 +35,11 @@ def _get(url: str) -> bytes:
 
 
 def _resolve(host: str) -> list[str]:
-    return sorted({i[4][0] for i in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)})
+    """A host's addresses; asked three times, as DNS may hand out a share of them at a time."""
+    found: set[str] = set()
+    for _ in range(3):
+        found |= {i[4][0] for i in socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)}
+    return sorted(found)
 
 
 def git_host(repo: str) -> tuple[str, int] | None:
@@ -59,8 +64,7 @@ def lists(env: dict) -> dict[str, tuple[list[str], int]]:
         nets = json.loads(_get("https://api.github.com/meta"))["git"] if name == "github.com" else _resolve(name)
         out["git"] = (nets, port)
     if env.get("STK_CF_EMAIL_TOKEN"):
-        nets = (_get("https://www.cloudflare.com/ips-v4").decode() + "\n" + _get("https://www.cloudflare.com/ips-v6").decode()).split()
-        out["mail"] = (nets, 443)
+        out["mail"] = (_resolve("api.cloudflare.com"), 443)
     else:
         out["mail"] = (_resolve(env.get("STK_SMTP_HOST") or "smtp.gmail.com"), int(env.get("STK_SMTP_PORT") or 587))
     return out

@@ -179,10 +179,10 @@ python -m send_to_kindle convert book.pdf book.epub                # build and c
   its own throwaway user, no network at all and nothing it can write but its private `/tmp`. The engine
   itself recognises files by their first bytes and never parses them.
 - **No links, and a pinned network**: the engine downloads nothing. Its firewall table
-  (`deploy/egress.nft`) lets its user reach only the library's git host and the mail service, by the
-  address lists their providers publish (GitHub's and Cloudflare's, refreshed daily by
-  `send-to-kindle-addresses.timer`; another host's DNS addresses), and local DNS: no other website,
-  nothing on the server, no private address.
+  (`deploy/egress.nft`) lets its user reach only the library's git host and the mail service (GitHub's
+  published git servers; the addresses of Cloudflare's mail API itself; another host's DNS addresses,
+  refreshed hourly by `send-to-kindle-addresses.timer`), and local DNS: no other website, nothing on the
+  server, no private address.
 - **Upload addresses** are random, work once and expire after 10 minutes; only a request with the
   token can make one.
 - The engine only ever mails your Kindle address (and short reports to the email inbox's allowed

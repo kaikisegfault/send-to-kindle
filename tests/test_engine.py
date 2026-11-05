@@ -287,14 +287,16 @@ class Addresses(unittest.TestCase):
         from send_to_kindle import addresses
 
         meta = json.dumps({"git": ["140.82.112.0/20", "20.201.28.151/32", "2606:50c0::/32"]}).encode()
-        pages = {"https://api.github.com/meta": meta, "https://www.cloudflare.com/ips-v4": b"104.16.0.0/13\n",
-                 "https://www.cloudflare.com/ips-v6": b"2606:4700::/32\n"}
-        with mock.patch("send_to_kindle.addresses._get", side_effect=lambda u: pages[u]):
+        pages = {"https://api.github.com/meta": meta}
+        api = ["104.19.192.174", "2606:4700:300a::6813:c0ae"]
+        with mock.patch("send_to_kindle.addresses._get", side_effect=lambda u: pages[u]), \
+             mock.patch("send_to_kindle.addresses._resolve", side_effect=lambda h: api if h == "api.cloudflare.com" else []):
             text = addresses.render(addresses.lists({"STK_LIBRARY_REPO": "git@github.com:me/lib.git", "STK_CF_EMAIL_TOKEN": "t"}))
         self.assertIn("add element inet send_to_kindle git4 { 140.82.112.0/20, 20.201.28.151/32 }", text)
         self.assertIn("add element inet send_to_kindle git6 { 2606:50c0::/32 }", text)
         self.assertIn("add element inet send_to_kindle git_port { 22 }", text)
-        self.assertIn("add element inet send_to_kindle mail4 { 104.16.0.0/13 }", text)
+        self.assertIn("add element inet send_to_kindle mail4 { 104.19.192.174/32 }", text)
+        self.assertIn("add element inet send_to_kindle mail6 { 2606:4700:300a::6813:c0ae/128 }", text)
         self.assertIn("add element inet send_to_kindle mail_port { 443 }", text)
         self.assertEqual(text.count("flush set"), 6)
 
