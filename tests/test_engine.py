@@ -272,33 +272,34 @@ class Flow(unittest.TestCase):
         self.assertIn("not taken", r["results"][1])
 
 
-class Addresses(unittest.TestCase):
-    """The firewall's allowed addresses: the library's git host and the mail service, nothing else."""
+class Egress(unittest.TestCase):
+    """Where the engine may connect, by name: its resolver fills the firewall's sets as it looks them up."""
 
     def test_git_hosts(self):
-        from send_to_kindle.addresses import git_host
+        from send_to_kindle.egress import git_host
 
         self.assertEqual(git_host("git@github.com:me/lib.git"), ("github.com", 22))
         self.assertEqual(git_host("ssh://git@git.example.com:2222/me/lib.git"), ("git.example.com", 2222))
         self.assertEqual(git_host("https://git.example.com/me/lib.git"), ("git.example.com", 443))
         self.assertIsNone(git_host(""))
 
-    def test_sets_are_filled_from_the_published_lists(self):
-        from send_to_kindle import addresses
+    def test_the_resolver_fills_the_sets_for_the_two_names_only(self):
+        from send_to_kindle import egress
 
-        meta = json.dumps({"git": ["140.82.112.0/20", "20.201.28.151/32", "2606:50c0::/32"]}).encode()
-        pages = {"https://api.github.com/meta": meta}
-        api = ["104.19.192.174", "2606:4700:300a::6813:c0ae"]
-        with mock.patch("send_to_kindle.addresses._get", side_effect=lambda u: pages[u]), \
-             mock.patch("send_to_kindle.addresses._resolve", side_effect=lambda h: api if h == "api.cloudflare.com" else []):
-            text = addresses.render(addresses.lists({"STK_LIBRARY_REPO": "git@github.com:me/lib.git", "STK_CF_EMAIL_TOKEN": "t"}))
-        self.assertIn("add element inet send_to_kindle git4 { 140.82.112.0/20, 20.201.28.151/32 }", text)
-        self.assertIn("add element inet send_to_kindle git6 { 2606:50c0::/32 }", text)
-        self.assertIn("add element inet send_to_kindle git_port { 22 }", text)
-        self.assertIn("add element inet send_to_kindle mail4 { 104.19.192.174/32 }", text)
-        self.assertIn("add element inet send_to_kindle mail6 { 2606:4700:300a::6813:c0ae/128 }", text)
-        self.assertIn("add element inet send_to_kindle mail_port { 443 }", text)
-        self.assertEqual(text.count("flush set"), 6)
+        tmp = Path(tempfile.mkdtemp()) / "settings"
+        tmp.write_text("STK_LIBRARY_REPO=git@github.com:me/lib.git\nSTK_CF_EMAIL_TOKEN='x$y'\n# STK_SMTP_HOST=no\n")
+        dest = egress.destinations(egress.settings(tmp))
+        self.assertEqual(dest, {"git": ("github.com", 22), "mail": ("api.cloudflare.com", 443)})
+        conf = egress.dns_conf(dest)
+        self.assertIn("nftset=/github.com/4#inet#send_to_kindle#git4,6#inet#send_to_kindle#git6", conf)
+        self.assertIn("nftset=/api.cloudflare.com/4#inet#send_to_kindle#mail4,6#inet#send_to_kindle#mail6", conf)
+        self.assertEqual(conf.count("nftset="), 2)
+        self.assertIn("cache-size=0", conf)
+        ports = egress.ports_nft(dest)
+        self.assertIn("add element inet send_to_kindle git_port { 22 }", ports)
+        self.assertIn("add element inet send_to_kindle mail_port { 443 }", ports)
+        smtp = egress.destinations({"STK_SMTP_HOST": "smtp.example.com", "STK_SMTP_PORT": "465"})
+        self.assertEqual(smtp, {"mail": ("smtp.example.com", 465)})
 
 
 class Converter(unittest.TestCase):

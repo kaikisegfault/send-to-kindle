@@ -178,11 +178,12 @@ python -m send_to_kindle convert book.pdf book.epub                # build and c
 - **Files are opened only by the converter**: a fresh process for each file, started by systemd with
   its own throwaway user, no network at all and nothing it can write but its private `/tmp`. The engine
   itself recognises files by their first bytes and never parses them.
-- **No links, and a pinned network**: the engine downloads nothing. Its firewall table
-  (`deploy/egress.nft`) lets its user reach only the library's git host and the mail service (GitHub's
-  published git servers; the addresses of Cloudflare's mail API itself; another host's DNS addresses,
-  refreshed hourly by `send-to-kindle-addresses.timer`), and local DNS: no other website, nothing on the
-  server, no private address.
+- **No links, and a network allowed by name**: the engine downloads nothing. Its firewall table
+  (`deploy/egress.nft`) lets its user reach only the library's git host and the mail service. The engine
+  has its own resolver (dnsmasq on 127.0.0.2, `send-to-kindle-dns.service`), the only one it may use: when
+  it looks up one of those two names, the resolver puts the answer's addresses into the firewall's allow
+  sets in the same moment. No other website, nothing on the server, no private address. After changing the
+  library repository or the mail settings, run the installer again.
 - **Upload addresses** are random, work once and expire after 10 minutes; only a request with the
   token can make one.
 - The engine only ever mails your Kindle address (and short reports to the email inbox's allowed

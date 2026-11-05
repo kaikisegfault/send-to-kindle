@@ -1,7 +1,9 @@
 #!/usr/sbin/nft -f
-# Where the engine's user (kindle) may connect: the library's git host and the mail service (addresses.nft,
-# refreshed hourly by send-to-kindle-addresses.timer), and local DNS. Nothing else: no other website, nothing
-# on this server, no private address. The engine takes no links.
+# Where the engine's user (kindle) may connect: the library's git host and the mail service, by name. Their
+# addresses enter the sets below the moment the engine looks them up, put there by its own resolver
+# (send-to-kindle-dns.service, dnsmasq on 127.0.0.2), and leave after an hour unless looked up again. The
+# engine may use only that resolver. Nothing else: no other website, nothing on this server, no private
+# address. The engine takes no links.
 # Loaded by send-to-kindle-firewall.service before the engine starts; replies on connections made to the
 # engine (state established) always pass.
 
@@ -9,11 +11,11 @@ table inet send_to_kindle {}
 delete table inet send_to_kindle
 
 table inet send_to_kindle {
-	set git4 { type ipv4_addr; flags interval; auto-merge; }
-	set git6 { type ipv6_addr; flags interval; auto-merge; }
+	set git4 { type ipv4_addr; flags timeout; timeout 1h; }
+	set git6 { type ipv6_addr; flags timeout; timeout 1h; }
 	set git_port { type inet_service; }
-	set mail4 { type ipv4_addr; flags interval; auto-merge; }
-	set mail6 { type ipv6_addr; flags interval; auto-merge; }
+	set mail4 { type ipv4_addr; flags timeout; timeout 1h; }
+	set mail6 { type ipv6_addr; flags timeout; timeout 1h; }
 	set mail_port { type inet_service; }
 
 	chain output {
@@ -23,7 +25,7 @@ table inet send_to_kindle {
 
 	chain engine {
 		ct state established,related accept
-		ip daddr 127.0.0.53 meta l4proto { tcp, udp } th dport 53 accept
+		ip daddr 127.0.0.2 meta l4proto { tcp, udp } th dport 53 accept
 		ip daddr @git4 tcp dport @git_port accept
 		ip6 daddr @git6 tcp dport @git_port accept
 		ip daddr @mail4 tcp dport @mail_port accept
@@ -32,4 +34,4 @@ table inet send_to_kindle {
 	}
 }
 
-include "/etc/send-to-kindle/addresses.nft"
+include "/etc/send-to-kindle/egress-ports.nft"

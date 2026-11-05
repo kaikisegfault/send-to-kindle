@@ -1,7 +1,7 @@
 [Unit]
 Description=send-to-kindle engine
-Requires=send-to-kindle-firewall.service send-to-kindle-convert.socket
-After=network-online.target send-to-kindle-firewall.service send-to-kindle-convert.socket
+Requires=send-to-kindle-firewall.service send-to-kindle-dns.service send-to-kindle-convert.socket
+After=network-online.target send-to-kindle-firewall.service send-to-kindle-dns.service send-to-kindle-convert.socket
 Wants=network-online.target
 
 [Service]
@@ -10,6 +10,8 @@ Group=kindle
 EnvironmentFile=/etc/send-to-kindle/settings
 Environment=HOME=/var/lib/send-to-kindle PYTHONPATH=/opt/send-to-kindle
 WorkingDirectory=/var/lib/send-to-kindle
+# Its own resolver (send-to-kindle-dns.service): the only one its firewall lets it use.
+BindReadOnlyPaths=/etc/send-to-kindle/resolv.conf:/etc/resolv.conf
 ExecStart=/opt/send-to-kindle/.venv/bin/python -m send_to_kindle serve
 Restart=on-failure
 RestartSec=5

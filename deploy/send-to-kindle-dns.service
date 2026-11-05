@@ -1,0 +1,26 @@
+[Unit]
+Description=send-to-kindle: the engine's resolver, which lets the firewall allow its git host and mail service as it looks them up
+Requires=send-to-kindle-firewall.service
+After=send-to-kindle-firewall.service network-online.target
+Before=send-to-kindle.service
+PartOf=send-to-kindle-firewall.service
+
+[Service]
+# dnsmasq binds 127.0.0.2:53 as root, then runs as nobody, keeping only what filling the firewall's sets needs.
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/send-to-kindle/dns.conf
+Restart=on-failure
+RestartSec=3
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_SETUID CAP_SETGID
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=yes
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target
