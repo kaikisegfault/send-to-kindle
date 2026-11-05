@@ -23,6 +23,8 @@ if [ ! -f /etc/send-to-kindle/settings ]; then
 fi
 
 install -d -m 755 /opt/send-to-kindle
+# Requirements changed: a fresh virtualenv, so packages no longer needed don't linger.
+cmp -s "$here/requirements.txt" /opt/send-to-kindle/requirements.txt || rm -rf /opt/send-to-kindle/.venv
 rm -rf /opt/send-to-kindle/send_to_kindle
 cp -r "$here/send_to_kindle" "$here/requirements.txt" /opt/send-to-kindle/
 find /opt/send-to-kindle/send_to_kindle -name __pycache__ -prune -exec rm -rf {} +
