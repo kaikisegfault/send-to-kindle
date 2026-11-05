@@ -1,67 +1,18 @@
 """Files and text into Documents.
 
-The engine itself only downloads and recognises files by their first bytes (from_url, kind_of); opening
-a file to read it (from_bytes, from_text, with_text) happens in the converter, a separate process with no
-network (converter.py).
+The engine itself only recognises files by their first bytes (kind_of); opening a file to read it
+(from_bytes, from_text, with_text) happens in the converter, a separate process with no network
+(converter.py). The engine never downloads anything: files and text are handed to it.
 """
 
 from __future__ import annotations
 
-import ipaddress
 import re
-import socket
-from urllib.parse import urljoin, urlparse
 
 from . import extract
-from .config import Config
 from .document import Document, sniff
 
-UA = "send-to-kindle (+https://github.com/kaikisegfault/send-to-kindle)"
-MAX_FETCH = 60 * 1024 * 1024
-MAX_REDIRECTS = 5
 WEB_PAGE = "html"
-
-
-def _public(host: str, port: int) -> None:
-    """Refuse a host that is, or resolves to, anything but the public internet (this server, a private
-    network, a cloud's metadata address…), so a link can't reach inside."""
-    try:
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as e:
-        raise ValueError(f"can't find {host}: {e}") from e
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
-            raise ValueError(f"{host} is not on the public internet")
-
-
-def download(url: str, cfg: Config) -> tuple[bytes, str, str]:
-    """GET a file link, following redirects only to public addresses. Returns data, its type, the name."""
-    import requests
-
-    for _ in range(MAX_REDIRECTS + 1):
-        u = urlparse(url)
-        if u.scheme not in ("http", "https") or not u.hostname:
-            raise ValueError(f"not a web link: {url[:200]}")
-        _public(u.hostname, u.port or (443 if u.scheme == "https" else 80))
-        try:
-            with requests.get(url, headers={"User-Agent": UA}, timeout=(15, 60), stream=True, allow_redirects=False) as r:
-                if r.is_redirect and r.headers.get("Location"):
-                    url = urljoin(url, r.headers["Location"])
-                    continue
-                r.raise_for_status()
-                chunks, size = [], 0
-                for chunk in r.iter_content(256 * 1024):
-                    size += len(chunk)
-                    if size > MAX_FETCH:
-                        raise ValueError("the file is over 60 MB")
-                    chunks.append(chunk)
-                name = urlparse(r.url).path.rsplit("/", 1)[-1]
-                cd = re.search(r'filename="?([^";]+)"?', r.headers.get("Content-Disposition", ""))
-                return b"".join(chunks), r.headers.get("Content-Type", ""), (cd.group(1) if cd else name) or "document"
-        except requests.RequestException as e:
-            raise RuntimeError(f"could not fetch {url[:200]}: {e}") from e
-    raise ValueError("too many redirects")
 
 
 def kind_of(data: bytes, name: str, content_type: str = "") -> str:

@@ -35,19 +35,14 @@ class Source:
     data: bytes
     name: str  # a file name, for the format and the title
     fmt: str  # pdf, epub, md, html…
-    label: str  # for the ledger: the link, inbox/x.pdf, the item's file, "written in a chat", "uploaded"
+    label: str  # for the ledger: inbox/x.pdf, the item's file, "written in a chat", "uploaded", "mail from …"
     inbox: str | None = None  # the inbox file it came from, which leaves the inbox once sent
     item: dict | None = None  # the library item it is, when sent by ID
 
 
 def _source(cfg: Config, src: dict) -> Source:
     if src.get("url"):
-        url = src["url"].strip()
-        data, ctype, name = sources.download(url, cfg)
-        fmt = sources.kind_of(data, name, ctype)
-        if fmt == "html":
-            raise ValueError("that link is a web page, not a file: read the page and send its text as content")
-        return Source(data, name, fmt, url)
+        raise ValueError("the engine takes no links: upload the file (POST /upload-slot) or send its text as content")
     if src.get("path"):
         with LOCK, Library(cfg) as lib:
             p = lib.resolve(src["path"])
@@ -70,7 +65,7 @@ def _source(cfg: Config, src: dict) -> Source:
             data = p.read_bytes()
         name = re.sub(r"^\d{4}-", "", p.name)
         return Source(data, name, sources.kind_of(data, name), row["file"], item=row)
-    raise ValueError("a source needs one of: url (a file link), path (a file in inbox/) or id (a library item)")
+    raise ValueError("a source needs one of: path (a file in inbox/) or id (a library item)")
 
 
 def _wants_epub(fmt_asked: str | None, src: Source) -> bool:
@@ -133,7 +128,7 @@ def _deliver(cfg: Config, src: Source, epub: bool, title: str | None) -> dict:
 
 
 def send(cfg: Config, req: dict) -> dict:
-    """A source (a file link, an inbox file, a library item) as it is or converted, or text as EPUB."""
+    """A source (an inbox file, a library item) as it is or converted, or text as EPUB."""
     title = (req.get("title") or "").strip() or None
     if req.get("content"):
         if req.get("format") == "original":
@@ -145,8 +140,8 @@ def send(cfg: Config, req: dict) -> dict:
 
 
 # ------------------------------------------------------------------ uploads --
-# A one-time address for a file that can't come by link: one Claude made or was given in a chat, sent
-# from Claude's own workspace with `curl -T file <url>`. The address is the credential: random, one
+# A one-time address for a file from elsewhere: one Claude made or was given in a chat, sent from Claude's
+# own workspace with `curl -T file <url>`. The address is the credential: random, one
 # use, 10 minutes. The request that makes it carries the engine's token.
 
 def _slot_file(cfg: Config, token: str) -> Path:

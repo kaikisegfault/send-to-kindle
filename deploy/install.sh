@@ -33,18 +33,22 @@ find /opt/send-to-kindle/send_to_kindle -name __pycache__ -prune -exec rm -rf {}
 /opt/send-to-kindle/.venv/bin/pip install -q --upgrade -r /opt/send-to-kindle/requirements.txt
 
 install -m 644 "$here/deploy/egress.nft" /etc/send-to-kindle/egress.nft
-for unit in send-to-kindle.service send-to-kindle-firewall.service send-to-kindle-convert.socket send-to-kindle-convert@.service; do
+for unit in send-to-kindle.service send-to-kindle-firewall.service send-to-kindle-convert.socket send-to-kindle-convert@.service \
+            send-to-kindle-addresses.service send-to-kindle-addresses.timer; do
   install -m 644 "$here/deploy/$unit" "/etc/systemd/system/$unit"
 done
 # A failed unit leaves an alert for the next agent session, if the server has that set up (agent-alert@).
 if [ -f /etc/systemd/system/agent-alert@.service ]; then
-  for unit in send-to-kindle send-to-kindle-firewall; do
+  for unit in send-to-kindle send-to-kindle-firewall send-to-kindle-addresses; do
     install -d -m 755 "/etc/systemd/system/$unit.service.d"
     printf '%s\n' '# Installed as a drop-in: when this unit fails, it leaves an alert for the next agent session.' \
       '[Unit]' 'OnFailure=agent-alert@%n.service' > "/etc/systemd/system/$unit.service.d/agent-alert.conf"
   done
 fi
 systemctl daemon-reload
+# Where the engine may connect, before its firewall loads (the table includes the list).
+systemctl start send-to-kindle-addresses
+systemctl enable --now send-to-kindle-addresses.timer >/dev/null 2>&1
 systemctl enable --now send-to-kindle-firewall >/dev/null 2>&1
 systemctl reload send-to-kindle-firewall
 systemctl enable --now send-to-kindle-convert.socket >/dev/null 2>&1

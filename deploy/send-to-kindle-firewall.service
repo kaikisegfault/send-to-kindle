@@ -1,5 +1,5 @@
 [Unit]
-Description=send-to-kindle: what the engine's user may connect to (nftables table inet send_to_kindle)
+Description=send-to-kindle: where the engine's user may connect (nftables table inet send_to_kindle)
 Before=send-to-kindle.service
 After=network-pre.target
 

@@ -10,7 +10,7 @@
     POST /inbound      raw email (message/rfc822)        the email inbox; answers at once, works after
     GET  /health
 
-A source is {"url": "..."} (a file link), {"path": "inbox/file.pdf"} or {"id": 12} (a library item).
+A source is {"path": "inbox/file.pdf"} or {"id": 12} (a library item). The engine takes no links.
 Long jobs answer within ~50 s; if one takes longer the reply says it is still working, the ledger shows
 the result when it is done, and a short mail tells the sender address how it ended.
 """

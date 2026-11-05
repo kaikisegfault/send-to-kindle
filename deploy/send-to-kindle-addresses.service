@@ -1,0 +1,10 @@
+[Unit]
+Description=send-to-kindle: refresh where the engine may connect (GitHub's and Cloudflare's published address lists)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/send-to-kindle/settings
+Environment=PYTHONPATH=/opt/send-to-kindle PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m send_to_kindle.addresses

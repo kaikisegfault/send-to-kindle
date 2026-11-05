@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import json
 import os
 import re
 import tempfile
@@ -214,14 +215,10 @@ class Flow(unittest.TestCase):
         res = jobs.send(self.cfg, {"source": {"path": "inbox/t.md"}})
         self.assertEqual((res["title"], res["format"]), ("A Talk", "epub"))
 
-    def test_links_must_be_public_files(self):
-        for url in ["http://127.0.0.1:5232/", "http://localhost/x.pdf", "http://169.254.169.254/latest", "http://10.1.2.3/a.pdf", "file:///etc/passwd"]:
-            with self.assertRaises(ValueError, msg=url):
-                sources.download(url, self.cfg)
-        page = (b"<!doctype html><html><body>a page</body></html>", "text/html", "index.html")
-        with mock.patch("send_to_kindle.sources.download", return_value=page):
-            with self.assertRaisesRegex(ValueError, "web page"):
-                jobs.send(self.cfg, {"source": {"url": "https://example.com/"}})
+    def test_the_engine_takes_no_links(self):
+        with self.assertRaisesRegex(ValueError, "takes no links"):
+            jobs.send(self.cfg, {"source": {"url": "https://example.com/paper.pdf"}})
+        self.assertFalse(hasattr(sources, "download"))
 
     def test_upload_address_works_once_and_expires(self):
         self.cfg = dataclasses.replace(self.cfg, public_url="https://kindle.example.com")
@@ -273,6 +270,33 @@ class Flow(unittest.TestCase):
             r = inbound.handle(self.cfg, msg.as_bytes())
         self.assertTrue(r["results"][0].startswith("sent 2: mailed"), r)
         self.assertIn("not taken", r["results"][1])
+
+
+class Addresses(unittest.TestCase):
+    """The firewall's allowed addresses: the library's git host and the mail service, nothing else."""
+
+    def test_git_hosts(self):
+        from send_to_kindle.addresses import git_host
+
+        self.assertEqual(git_host("git@github.com:me/lib.git"), ("github.com", 22))
+        self.assertEqual(git_host("ssh://git@git.example.com:2222/me/lib.git"), ("git.example.com", 2222))
+        self.assertEqual(git_host("https://git.example.com/me/lib.git"), ("git.example.com", 443))
+        self.assertIsNone(git_host(""))
+
+    def test_sets_are_filled_from_the_published_lists(self):
+        from send_to_kindle import addresses
+
+        meta = json.dumps({"git": ["140.82.112.0/20", "20.201.28.151/32", "2606:50c0::/32"]}).encode()
+        pages = {"https://api.github.com/meta": meta, "https://www.cloudflare.com/ips-v4": b"104.16.0.0/13\n",
+                 "https://www.cloudflare.com/ips-v6": b"2606:4700::/32\n"}
+        with mock.patch("send_to_kindle.addresses._get", side_effect=lambda u: pages[u]):
+            text = addresses.render(addresses.lists({"STK_LIBRARY_REPO": "git@github.com:me/lib.git", "STK_CF_EMAIL_TOKEN": "t"}))
+        self.assertIn("add element inet send_to_kindle git4 { 140.82.112.0/20, 20.201.28.151/32 }", text)
+        self.assertIn("add element inet send_to_kindle git6 { 2606:50c0::/32 }", text)
+        self.assertIn("add element inet send_to_kindle git_port { 22 }", text)
+        self.assertIn("add element inet send_to_kindle mail4 { 104.16.0.0/13 }", text)
+        self.assertIn("add element inet send_to_kindle mail_port { 443 }", text)
+        self.assertEqual(text.count("flush set"), 6)
 
 
 class Converter(unittest.TestCase):

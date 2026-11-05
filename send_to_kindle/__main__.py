@@ -2,7 +2,7 @@
 
     python -m send_to_kindle serve                       run the HTTP service
     python -m send_to_kindle convert-stdio               one conversion on stdin/stdout (the converter service)
-    python -m send_to_kindle send <file link|inbox/…|item ID> [--epub|--original] [--title T]
+    python -m send_to_kindle send <inbox/…|item ID> [--epub|--original] [--title T]
     python -m send_to_kindle convert <file> <out.epub>   no mail: just build and check the EPUB
 """
 
@@ -18,13 +18,11 @@ from .config import Config
 
 
 def _source(arg: str) -> dict:
-    if arg.startswith(("http://", "https://")):
-        return {"url": arg}
     if arg.startswith("inbox/"):
         return {"path": arg}
     if arg.isdigit():
         return {"id": int(arg)}
-    raise SystemExit(f"{arg}: give a file link, an inbox path (inbox/…) or an item ID")
+    raise SystemExit(f"{arg}: give an inbox path (inbox/…) or an item ID")
 
 
 def main(argv: list[str] | None = None) -> None:

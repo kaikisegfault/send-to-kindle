@@ -8,12 +8,13 @@ before it goes out.
 - **As it is**: a file goes to the Kindle unchanged.
 - **Converted**: a PDF (scans included, through OCR), EPUB, DOCX, HTML, Markdown or text file, or text
   sent with the request, becomes an EPUB that reflows on the Kindle screen.
-- **From anywhere**: a file link, a file in the library's inbox, a library item, a file uploaded to a
-  one-time address (for example from an assistant's own workspace), or mail.
+- **Handed to it**: a file in the library's inbox, a library item, a file uploaded to a one-time
+  address (for example from an assistant's own workspace), mail, or text. It downloads nothing.
 - **Library** (optional): everything provided and sent, kept in a git repository, with a CSV ledger and
   an ID for every item. Nothing stays on the server.
 
-Reading web pages and videos is not its job: an assistant reads those and sends the text.
+Reading web pages and videos is not its job, and it opens no links: an assistant reads those and sends
+the text or the file.
 
 ## How it works
 
@@ -22,7 +23,7 @@ assistant / script / you
         │  HTTPS + bearer token (or a one-time upload address)
         ▼
   send-to-kindle engine (Python, on any small server)
-   ├─ get: file links (public addresses only), the library, one-time uploads, mail
+   ├─ take: the library's inbox and items, one-time uploads, mail, text (no links)
    ├─ convert, in a separate process with no network: PDF text (PyMuPDF, cross-checked by poppler's
    │  pdftotext; Tesseract OCR for scans), EPUB, DOCX, HTML, Markdown → pandoc → EPUB 3, then the
    │  completeness check and an EPUB structure check
@@ -140,8 +141,7 @@ library.
 ## API
 
 Every request carries `Authorization: Bearer <STK_TOKEN>`, except an upload to a one-time address. A
-*source* is one of `{"url": "…"}` (a link to a file), `{"path": "inbox/file.pdf"}` or `{"id": 12}`
-(a library item).
+*source* is `{"path": "inbox/file.pdf"}` or `{"id": 12}` (a library item); the engine takes no links.
 
 | Request | Body | Does |
 |---|---|---|
@@ -168,7 +168,7 @@ sender gets a short reply.
 ## Command line
 
 ```sh
-python -m send_to_kindle send https://example.com/paper.pdf       # the PDF as it is
+python -m send_to_kindle send inbox/report.pdf                    # the PDF as it is
 python -m send_to_kindle send inbox/report.pdf --epub              # the PDF as reflowing text
 python -m send_to_kindle convert book.pdf book.epub                # build and check only, no mail
 ```
@@ -178,9 +178,11 @@ python -m send_to_kindle convert book.pdf book.epub                # build and c
 - **Files are opened only by the converter**: a fresh process for each file, started by systemd with
   its own throwaway user, no network at all and nothing it can write but its private `/tmp`. The engine
   itself recognises files by their first bytes and never parses them.
-- **Links reach only the public internet**: an address that is, or resolves to, this server, a private
-  network or a cloud's metadata service is refused, redirects included; the firewall table
-  (`deploy/egress.nft`) blocks the same for the engine's user.
+- **No links, and a pinned network**: the engine downloads nothing. Its firewall table
+  (`deploy/egress.nft`) lets its user reach only the library's git host and the mail service, by the
+  address lists their providers publish (GitHub's and Cloudflare's, refreshed daily by
+  `send-to-kindle-addresses.timer`; another host's DNS addresses), and local DNS: no other website,
+  nothing on the server, no private address.
 - **Upload addresses** are random, work once and expire after 10 minutes; only a request with the
   token can make one.
 - The engine only ever mails your Kindle address (and short reports to the email inbox's allowed
