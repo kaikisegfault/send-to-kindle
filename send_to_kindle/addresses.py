@@ -94,8 +94,10 @@ def main() -> int:
         f.write(text)
         tmp = f.name
     os.chmod(tmp, 0o644)
-    table = subprocess.run(["nft", "list", "table", *TABLE.split()], capture_output=True)
-    if table.returncode == 0:  # the table is loaded: apply now, in one transaction (refused whole if invalid)
+    # The table with its sets is loaded: apply now, in one transaction (refused whole if invalid). Otherwise
+    # (first install, or an older table without the sets) the firewall loads the file when it (re)starts.
+    loaded = subprocess.run(["nft", "list", "set", *TABLE.split(), "git4"], capture_output=True)
+    if loaded.returncode == 0:
         r = subprocess.run(["nft", "-f", tmp], capture_output=True, text=True)
         if r.returncode != 0:
             os.unlink(tmp)
